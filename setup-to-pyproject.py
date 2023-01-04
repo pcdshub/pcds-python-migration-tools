@@ -71,7 +71,7 @@ def find_file_by_options(
     for option in options:
         option = path / option
         if option.exists():
-            return option
+            return option.resolve()
 
     return None
 
@@ -186,7 +186,10 @@ def migrate(path_to_repository: pathlib.Path):
         source = fp.read()
 
     os.chdir(setup_py.parent)
-    exec(source)
+
+    globals_ = dict(globals())
+    globals_["__file__"] = str(setup_py)
+    exec(source, globals_)
 
     setup_kwargs = setuptools.get_last_setup_kwargs()
     # import pprint; pprint.pprint(setup_kwargs)
