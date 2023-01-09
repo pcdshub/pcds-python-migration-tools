@@ -33,7 +33,7 @@ sys.modules["setuptools"] = setuptools
 _template = {
     "build-system": {
         "build-backend": "setuptools.build_meta",
-        "requires": ["setuptools", "versioneer[toml]"],
+        "requires": ["setuptools>=45", "setuptools_scm[toml]>=6.2"],
     },
     "project": {
         "authors": [{"name": "SLAC National Accelerator Laboratory"}],
