@@ -331,7 +331,7 @@ def travis_yaml_to_pcds_gha(contents: str, template: str = "gha_template.yml") -
     return tpl.substitute(**env)
 
 
-def dump_travis_to_gha(filename: str):
+def dump_travis_to_gha(filename: str, template: str):
     """
     Dump converted Travis CI yaml source ``contents`` as a best-effort bash
     script.
@@ -344,7 +344,7 @@ def dump_travis_to_gha(filename: str):
     with open(filename, "rt") as fp:
         contents = fp.read()
 
-    gha = travis_yaml_to_pcds_gha(contents)
+    gha = travis_yaml_to_pcds_gha(contents, template=template)
     print(gha.rstrip())
 
 
@@ -369,6 +369,7 @@ def _create_argparser() -> argparse.ArgumentParser:
         "gha", help="Convert script to PCDS-standard GitHub Actions"
     )
     dump_script_parser.add_argument("filename", type=str)
+    dump_script_parser.add_argument("--template", default="gha_template.yml", type=str)
     dump_script_parser.set_defaults(func=dump_travis_to_gha)
     return parser
 
