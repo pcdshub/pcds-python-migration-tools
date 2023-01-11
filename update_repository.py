@@ -1,11 +1,11 @@
 #!/usr/bin/env python
 
+import argparse
 import dataclasses
 import difflib
 import logging
 import pathlib
 import subprocess
-import sys
 import textwrap
 from typing import Any, Optional, Union
 
@@ -28,6 +28,14 @@ cookiecutter_root = script_path / "cookiecutter-pcds-python" / "{{ cookiecutter.
 class Repository:
     root: pathlib.Path
     template_defaults: dict[str, Any]
+
+    def run_command(self, command: list[str]):
+        print("Running:", " ".join(command))
+        subprocess.check_call(
+            command,
+            # shell=True,
+            cwd=self.root,
+        )
 
 
 @dataclasses.dataclass
@@ -185,6 +193,8 @@ class AddFile(Fix):
         with open(self.file, self.mode) as fp:
             fp.write(self.contents)
 
+        self.repo.run_command(["git", "add", str(self.file)])
+
 
 @dataclasses.dataclass
 class TemplateFile:
@@ -250,6 +260,8 @@ class AddFileFromTemplate(Fix):
         with open(self.dest_file, self.mode) as fp:
             fp.write(self.contents)
 
+        self.repo.run_command(["git", "add", str(self.dest_file)])
+
 
 @dataclasses.dataclass(repr=False)
 class DeleteFiles(Fix):
@@ -296,12 +308,7 @@ class GitCommit(Fix):
         return f"Create git commit with message: {self.message}"
 
     def run(self):
-        result = subprocess.check_output(
-            f"git commit -a -n -m {repr(self.message)}",
-            shell=True,
-            cwd=self.repo.root,
-        )
-        print(result)
+        self.repo.run_command(["git", "commit", "-an", "-m", self.message])
 
 
 def get_repo_name(root: pathlib.Path) -> str:
@@ -375,7 +382,7 @@ def get_fixes(repo: Repository) -> list[Fix]:
             AddFileFromTemplate(
                 f"add_{file.template_file}",
                 template_file=pathlib.Path(file.template_file),
-                dest_file=pathlib.Path(dest_file),
+                dest_file=repo.root / dest_file,
                 repo=repo,
                 source_base_path=cookiecutter_root,
             )
@@ -404,19 +411,36 @@ def get_fixes(repo: Repository) -> list[Fix]:
     return fixes
 
 
-def run_fixes(fixes: list[Fix], dry_run: bool = True):
+def run_fixes(
+    fixes: list[Fix],
+    dry_run: bool = True,
+    skip: Optional[list[str]] = None,
+):
+    skip = skip or []
     for fix in fixes:
+        if fix.name in skip:
+            continue
+
         desc = textwrap.indent(str(fix), prefix="    ")
         print(f"{desc.lstrip()}")
         print()
 
     if not dry_run:
         for fix in fixes:
-            fix.run()
+            if fix.name in skip:
+                continue
+
+            try:
+                fix.run()
+            except Exception:
+                logger.error("Failed to run fix: %s", str(fix), exc_info=True)
+                logger.error("Continue? [Y/n]")
+                if input().lower() not in ("", "y", "yes"):
+                    break
 
 
-def main(path: str, dry_run: bool = True):
-    root = pathlib.Path(path).expanduser().resolve()
+def main(repo_root: str, dry_run: bool = True):
+    root = pathlib.Path(repo_root).expanduser().resolve()
     repo = Repository(
         root=root,
         template_defaults=get_template_defaults(root),
@@ -426,5 +450,25 @@ def main(path: str, dry_run: bool = True):
     return run_fixes(fixes, dry_run=dry_run)
 
 
+def _create_argparser() -> argparse.ArgumentParser:
+    """
+    Create an ArgumentParser for detravisify.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("repo_root", type=str)
+    parser.add_argument("--write", action="store_false", dest="dry_run")
+    return parser
+
+
+def _main(args=None):
+    """CLI entrypoint."""
+    parser = _create_argparser()
+    return main(**vars(parser.parse_args(args=args)))
+
+
 if __name__ == "__main__":
-    main(sys.argv[1])
+    _main()
