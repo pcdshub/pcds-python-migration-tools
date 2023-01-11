@@ -170,7 +170,7 @@ class UpdateSphinxConfig(Fix):
     def run(self):
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.file, "wt") as fp:
-            fp.write(self.new_contents)
+            print(self.new_contents.rstrip(), file=fp)
 
 
 @dataclasses.dataclass(repr=False)
@@ -191,7 +191,7 @@ class AddFile(Fix):
     def run(self):
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.file, self.mode) as fp:
-            fp.write(self.contents)
+            print(self.contents.rstrip(), file=fp)
 
         self.repo.run_command(["git", "add", str(self.file)])
 
@@ -258,7 +258,7 @@ class AddFileFromTemplate(Fix):
     def run(self):
         self.dest_file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.dest_file, self.mode) as fp:
-            fp.write(self.contents)
+            print(self.contents.rstrip(), file=fp)
 
         self.repo.run_command(["git", "add", str(self.dest_file)])
 
