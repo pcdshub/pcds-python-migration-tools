@@ -291,7 +291,7 @@ def simplify_extras(conda_extras: str, pip_extras: str) -> tuple[str, str, str]:
     return (" ".join(common), " ".join(conda_packages), " ".join(pip_packages))
 
 
-def travis_yaml_to_pcds_gha(contents: str, template: str = "gha_template.yml") -> str:
+def travis_yaml_to_pcds_python_gha(contents: str, template: str = "") -> str:
     """
     Convert Travis CI yaml source ``contents`` to a best-effort PCDS GHA Workflow.
 
@@ -300,12 +300,18 @@ def travis_yaml_to_pcds_gha(contents: str, template: str = "gha_template.yml") -
     contents : str
         Contents of the Travis CI yaml file (``.travis.yml``)
 
+    template : str
+        Template filename for GitHub Actions workflow.
+        Defaults to ``python_gha_template.yml`` distributed in this repository.
+
     Returns
     -------
     str
     """
+    if not template:
+        template = "python_gha_template.yml"
+
     conf = yaml.load(contents, Loader=yaml.Loader)
-    # jobs = apischema.deserialize(Jobs, conf.get("jobs", {}))
     env = env_to_dict(apischema.deserialize(Environment, conf.get("env", {})).global_)
 
     defaults = {
@@ -331,20 +337,62 @@ def travis_yaml_to_pcds_gha(contents: str, template: str = "gha_template.yml") -
     return tpl.substitute(**env)
 
 
+def travis_yaml_to_pcds_twincat_gha(contents: str, template: str = "") -> str:
+    """
+    Convert Travis CI yaml source ``contents`` to a best-effort PCDS GHA Workflow.
+
+    For PCDS TwinCAT repositories.
+
+    Parameters
+    ----------
+    contents : str
+        Contents of the Travis CI yaml file (``.travis.yml``)
+
+    template : str
+        Template filename for the GitHub Actions workflow.
+        Defaults to ``twincat_gha_template.yml`` distributed in this repository.
+
+    Returns
+    -------
+    str
+    """
+    if not template:
+        template = "twincat_gha_template.yml"
+
+    conf = yaml.load(contents, Loader=yaml.Loader)
+    env = env_to_dict(apischema.deserialize(Environment, conf.get("env", {})).global_)
+
+    defaults = {
+        "package_name": "",
+        "TWINCAT_STYLE_EXCLUDE": "",
+    }
+    for key, default in defaults.items():
+        env.setdefault(key, default)
+
+    with open(template, "rt") as fp:
+        tpl = string.Template(fp.read())
+    return tpl.substitute(**env)
+
+
 def dump_travis_to_gha(filename: str, template: str):
     """
-    Dump converted Travis CI yaml source ``contents`` as a best-effort bash
-    script.
+    Converted Travis CI yaml ``filename`` to GitHub Actions and output the
+    workflow.
 
     Parameters
     ----------
     filename : str
-
+        The
+    template : str
+        A specific template filename to use.
     """
     with open(filename, "rt") as fp:
         contents = fp.read()
 
-    gha = travis_yaml_to_pcds_gha(contents, template=template)
+    if "travis/shared_configs/twincat" in contents:
+        gha = travis_yaml_to_pcds_twincat_gha(contents, template=template)
+    else:
+        gha = travis_yaml_to_pcds_python_gha(contents, template=template)
     print(gha.rstrip())
 
 
@@ -369,7 +417,7 @@ def _create_argparser() -> argparse.ArgumentParser:
         "gha", help="Convert script to PCDS-standard GitHub Actions"
     )
     dump_script_parser.add_argument("filename", type=str)
-    dump_script_parser.add_argument("--template", default="gha_template.yml", type=str)
+    dump_script_parser.add_argument("--template", default="", type=str)
     dump_script_parser.set_defaults(func=dump_travis_to_gha)
     return parser
 
