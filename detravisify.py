@@ -374,6 +374,25 @@ def travis_yaml_to_pcds_twincat_gha(contents: str, template: str = "") -> str:
     return tpl.substitute(**env)
 
 
+def migrate_travis_to_gha(filename: str, template: str = ""):
+    """
+    Converted Travis CI yaml ``filename`` to GitHub Actions.
+
+    Parameters
+    ----------
+    filename : str
+        The
+    template : str, optional
+        A specific template filename to use.
+    """
+    with open(filename, "rt") as fp:
+        contents = fp.read()
+
+    if "travis/shared_configs/twincat" in contents:
+        return travis_yaml_to_pcds_twincat_gha(contents, template=template)
+    return travis_yaml_to_pcds_python_gha(contents, template=template)
+
+
 def dump_travis_to_gha(filename: str, template: str):
     """
     Converted Travis CI yaml ``filename`` to GitHub Actions and output the
@@ -386,13 +405,7 @@ def dump_travis_to_gha(filename: str, template: str):
     template : str
         A specific template filename to use.
     """
-    with open(filename, "rt") as fp:
-        contents = fp.read()
-
-    if "travis/shared_configs/twincat" in contents:
-        gha = travis_yaml_to_pcds_twincat_gha(contents, template=template)
-    else:
-        gha = travis_yaml_to_pcds_python_gha(contents, template=template)
+    gha = migrate_travis_to_gha(filename, template)
     print(gha.rstrip())
 
 
