@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import configparser
-import copy
 import os
 import pathlib
 import sys
@@ -11,6 +10,12 @@ from typing import Any
 
 import setuptools as _setuptools
 import toml
+
+script_path = pathlib.Path(__file__).resolve().parent
+cookiecutter_root = (
+    script_path / "cookiecutter-pcds-python" / "{{ cookiecutter.folder_name }}"
+)
+cookiecutter_import_path = cookiecutter_root / "{{ cookiecutter.import_name }}"
 
 
 class SetuptoolsStandin(ModuleType):
@@ -33,42 +38,11 @@ setuptools = SetuptoolsStandin(name="setuptools")
 sys.modules["setuptools"] = setuptools
 
 
-_template = {
-    "build-system": {
-        "build-backend": "setuptools.build_meta",
-        "requires": ["setuptools>=45", "setuptools_scm[toml]>=6.2"],
-    },
-    "project": {
-        "authors": [{"name": "SLAC National Accelerator Laboratory"}],
-        "classifiers": ["Programming Language :: Python :: 3"],
-        "description": "",
-        "dynamic": ["version", "readme", "dependencies"],
-        "keywords": [],
-        "license": {"file": "LICENSE.md"},
-        "name": "",
-        "requires-python": ">=3.9",
-        "scripts": {},  # "pmpsdb": "pmpsdb_client:cli.entrypoint"},
-    },
-    "tool": {
-        "setuptools_scm": {
-            "write_to": "TODO/_version.py",
-        },
-        "setuptools": {
-            "packages": {
-                "find": {
-                    "where": ["."],
-                    "include": ["TODO"],
-                    "namespaces": False,
-                }
-            },
-            "dynamic": {
-                "readme": {"file": ["README.md"]},
-                "dependencies": {"file": ["requirements.txt"]},
-                "optional-dependencies": {},
-            },
-        }
-    },
-}
+def get_pyproject_template() -> dict[str, Any]:
+    with open(cookiecutter_root / "pyproject.toml") as fp:
+        contents = fp.read()
+
+    return toml.loads(contents)
 
 
 def find_file_by_options(
@@ -137,7 +111,7 @@ def convert_to_pyproject_toml(
     project_path: pathlib.Path,
     setup_kwargs: dict[str, Any],
 ):
-    pyproject = copy.deepcopy(_template)
+    pyproject = get_pyproject_template()
     project = pyproject["project"]
     tool = pyproject["tool"]
     pick_file(

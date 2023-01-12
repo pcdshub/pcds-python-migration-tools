@@ -650,7 +650,6 @@ def main(
     only: Optional[list[str]] = None,
 ):
     root = pathlib.Path(repo_root).expanduser().resolve()
-    print(optional_fixes)
     repo = Repository(
         root=root,
         template_defaults=get_template_defaults(root),
@@ -677,7 +676,7 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--skip", type=str, action="append")
     parser.add_argument("--only", type=str, action="append")
     parser.add_argument(
-        "--optional-fix",
+        "--enable",
         type=str,
         action="append",
         dest="optional_fixes"
