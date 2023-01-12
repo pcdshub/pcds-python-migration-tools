@@ -1,8 +1,11 @@
 #!/usr/bin/env python
 
+from __future__ import annotations
+
 import argparse
 import dataclasses
 import difflib
+import enum
 import logging
 import pathlib
 import subprocess
@@ -10,8 +13,10 @@ import textwrap
 from typing import Any, Optional, Union
 
 import jinja2
+import toml
 
 from detravisify import migrate_travis_to_gha
+from setup_to_pyproject import migrate as migrate_setup_py_to_pyproject
 
 logger = logging.getLogger(__name__)
 
@@ -21,13 +26,31 @@ pyupgrade_skip_files = [
     "versioneer.py",
     "_version.py",
 ]
-cookiecutter_root = script_path / "cookiecutter-pcds-python" / "{{ cookiecutter.folder_name }}"
+cookiecutter_root = (
+    script_path / "cookiecutter-pcds-python" / "{{ cookiecutter.folder_name }}"
+)
+cookiecutter_import_path = cookiecutter_root / "{{ cookiecutter.import_name }}"
+
+
+class Fixes(str, enum.Enum):
+    pyproject_toml = "pyproject.toml"
+    setuptools_scm = "setuptools_scm"
+
+    def __str__(self):
+        return self.value
 
 
 @dataclasses.dataclass
 class Repository:
     root: pathlib.Path
     template_defaults: dict[str, Any]
+    python_version: str = "3.9"
+    optional_fixes: list[str] = dataclasses.field(default_factory=list)
+
+    @property
+    def import_dir(self) -> pathlib.Path:
+        # TODO import name in Repository instance
+        return self.root / get_repo_name(self.root)
 
     def run_command(self, command: list[str]):
         print("Running:", " ".join(command))
@@ -51,9 +74,9 @@ class CookiecutterSettings:
     email: str = ""
 
     # To determine:
-    project_name: str = "project-name"   # pcdshub/project-name
-    repo_name: str = "project_name"      # import project_name
-    import_name: str = ""                # import project_name
+    project_name: str = "project-name"  # pcdshub/project-name
+    repo_name: str = "project_name"  # import project_name
+    import_name: str = ""  # import project_name
     folder_name: str = ""
 
 
@@ -86,9 +109,7 @@ class NestedFix(Fix):
         desc = [self.title]
         for idx, fix in enumerate(self.nested_fixes, 1):
             sub_fix_desc = textwrap.indent(fix.description, prefix="    ")
-            desc.append(
-                f"{idx}. {sub_fix_desc}"
-            )
+            desc.append(f"{idx}. {sub_fix_desc}")
         return "\n".join(desc)
 
     def run(self):
@@ -140,8 +161,12 @@ class UpdateSphinxConfig(Fix):
 
         self.new_contents = self.original_contents
 
-        self.new_contents = self.new_contents.replace("doctr_versions_menu", "docs-versions-menu")
-        self.new_contents = self.new_contents.replace("language = None", 'language = "en"')
+        self.new_contents = self.new_contents.replace(
+            "doctr_versions_menu", "docs-versions-menu"
+        )
+        self.new_contents = self.new_contents.replace(
+            "language = None", 'language = "en"'
+        )
 
         if "sphinxcontrib.jquery" not in self.new_contents:
             self.new_contents = self.new_contents.replace(
@@ -174,6 +199,78 @@ class UpdateSphinxConfig(Fix):
 
 
 @dataclasses.dataclass(repr=False)
+class PyprojectTomlMigration(NestedFix):
+    pyproject_toml: str = dataclasses.field(init=False)
+
+    def __post_init__(self):
+        self.pyproject_toml = toml.dumps(migrate_setup_py_to_pyproject(self.repo.root))
+        self.nested_fixes = [
+            DeleteFiles(
+                name="delete_setup_py",
+                repo=self.repo,
+                files=[self.repo.root / "setup.py", self.repo.root / "setup.cfg"],
+                missing_ok=True,
+            ),
+            AddFile(
+                name="add_pyproject_toml",
+                repo=self.repo,
+                file=self.repo.root / "pyproject.toml",
+                contents=self.pyproject_toml,
+            ),
+        ]
+
+    @property
+    def title(self) -> str:
+        return "Migrate to pyproject.toml"
+
+
+@dataclasses.dataclass(repr=False)
+class SetuptoolsScmMigration(NestedFix):
+    def __post_init__(self):
+        self.pyproject_toml = toml.dumps(migrate_setup_py_to_pyproject(self.repo.root))
+        self.nested_fixes = [
+            DeleteFiles(
+                name="delete_versioneer",
+                repo=self.repo,
+                files=[
+                    self.repo.root / "versioneer.py",
+                    self.repo.import_dir / "_version.py",
+                ],
+                missing_ok=True,
+            ),
+            RemoveLines(
+                name="versioneer_lines",
+                repo=self.repo,
+                file=self.repo.import_dir / "__init__.py",
+                lines=[
+                    "from ._version import get_versions",
+                    "__version__ = get_versions()['version']",
+                    "del get_versions",
+                ]
+            ),
+            AppendLines(
+                name="setuptools_scm_version",
+                repo=self.repo,
+                file=self.repo.import_dir / "__init__.py",
+                lines=[
+                    "from .version import __version__",
+                ]
+            ),
+            AddFileFromTemplate(
+                "add_setuptools_version",
+                template_file=pathlib.Path("version.py"),
+                dest_file=self.repo.import_dir / "version.py",
+                repo=self.repo,
+                source_base_path=cookiecutter_import_path,
+            ),
+        ]
+
+    @property
+    def title(self) -> str:
+        return "Migrate to pyproject.toml"
+
+
+@dataclasses.dataclass(repr=False)
 class AddFile(Fix):
     file: pathlib.Path
     contents: str = ""
@@ -196,10 +293,61 @@ class AddFile(Fix):
         self.repo.run_command(["git", "add", str(self.file)])
 
 
+@dataclasses.dataclass(repr=False)
+class AppendLines(Fix):
+    file: pathlib.Path
+    lines: list[str]
+    skip_if_present: bool = True
+
+    def __post_init__(self):
+        self.files = [self.file]
+
+    @property
+    def description(self) -> str:
+        return f"Add lines to {self.file}:\n{self.lines}"
+
+    def run(self):
+        with open(self.file) as fp:
+            lines = fp.read().splitlines()
+
+        for line in self.lines:
+            if not self.skip_if_present or line not in lines:
+                lines.append(line)
+
+        with open(self.file, "wt") as fp:
+            print("\n".join(lines).rstrip(), file=fp)
+
+
+@dataclasses.dataclass(repr=False)
+class RemoveLines(Fix):
+    file: pathlib.Path
+    lines: list[str]
+
+    def __post_init__(self):
+        self.files = [self.file]
+
+    @property
+    def description(self) -> str:
+        return f"Remove matching lines from {self.file}:\n{self.lines}"
+
+    def run(self):
+        with open(self.file) as fp:
+            lines = fp.read().splitlines()
+
+        for line in self.lines:
+            while line in lines:
+                lines.remove(line)
+
+        with open(self.file, "wt") as fp:
+            print("\n".join(lines).rstrip(), file=fp)
+
+
 @dataclasses.dataclass
 class TemplateFile:
     template_file: Union[str, pathlib.Path]
-    possible_files: list[Union[str, pathlib.Path]] = dataclasses.field(default_factory=list)
+    possible_files: list[Union[str, pathlib.Path]] = dataclasses.field(
+        default_factory=list
+    )
     add_if_missing: bool = True
 
     def __post_init__(self):
@@ -266,6 +414,7 @@ class AddFileFromTemplate(Fix):
 @dataclasses.dataclass(repr=False)
 class DeleteFiles(Fix):
     files: list[pathlib.Path] = dataclasses.field(default_factory=list)
+    missing_ok: bool = False
 
     @property
     def description(self) -> str:
@@ -273,7 +422,12 @@ class DeleteFiles(Fix):
 
     def run(self):
         for file in self.files:
-            file.unlink()
+            try:
+                file.unlink()
+            except FileNotFoundError:
+                if self.missing_ok:
+                    continue
+                raise
 
 
 @dataclasses.dataclass(repr=False)
@@ -296,7 +450,9 @@ class RunPyupgrade(Fix):
             for file in self.repo.root.glob("**/*.py")
             if file.name not in self.skip_files
         )
-        pyupgrade_main(argv=[*python_source_files, "--py39-plus"])
+
+        ver = self.repo.python_version.replace(".", "")
+        pyupgrade_main(argv=[f"--py{ver}-plus", *python_source_files])
 
 
 @dataclasses.dataclass
@@ -340,11 +496,7 @@ def get_fixes(repo: Repository) -> list[Fix]:
     for file in to_remove:
         if file.exists():
             fixes.append(
-                DeleteFiles(
-                    name=f"remove-{file.name}",
-                    repo=repo,
-                    files=[file]
-                )
+                DeleteFiles(name=f"remove-{file.name}", repo=repo, files=[file])
             )
 
     to_update = [
@@ -397,17 +549,61 @@ def get_fixes(repo: Repository) -> list[Fix]:
             )
         )
 
-    fixes.append(GitCommit(name="commit", repo=repo, message="MNT: update repository with pcds-migration-tools"))
+    fixes.append(
+        GitCommit(
+            name="commit",
+            repo=repo,
+            message="MNT: update repository with pcds-migration-tools",
+        )
+    )
 
     sphinx_config = repo.root / "docs" / "source" / "conf.py"
     if sphinx_config.exists():
-        sphinx_update = UpdateSphinxConfig(name="update_sphinx_config", repo=repo, file=sphinx_config)
+        sphinx_update = UpdateSphinxConfig(
+            name="update_sphinx_config", repo=repo, file=sphinx_config
+        )
         if sphinx_update.changed:
-            fixes.append(sphinx_update)
-            fixes.append(GitCommit(name="commit", repo=repo, message="DOC: update sphinx config with pcds-migration-tools"))
+            fixes.extend(
+                [
+                    sphinx_update,
+                    GitCommit(
+                        name="commit",
+                        repo=repo,
+                        message="DOC: update sphinx config with pcds-migration-tools",
+                    ),
+                ]
+            )
 
-    fixes.append(RunPyupgrade("pyupgrade", repo, skip_files=pyupgrade_skip_files))
-    fixes.append(GitCommit(name="commit", repo=repo, message="STY: update repository to Python 3.9+ standards"))
+    fixes.extend(
+        [
+            RunPyupgrade("pyupgrade", repo, skip_files=pyupgrade_skip_files),
+            GitCommit(
+                name="commit",
+                repo=repo,
+                message=f"STY: update repository to Python {repo.python_version}+ standards",
+            ),
+        ]
+    )
+
+    setup_py = repo.root / "setup.py"
+    if setup_py.exists() and Fixes.pyproject_toml in repo.optional_fixes:
+        fixes.extend(
+            [
+                PyprojectTomlMigration(name=Fixes.pyproject_toml, repo=repo),
+                GitCommit(
+                    name="commit",
+                    repo=repo,
+                    message="BLD: migrate to pyproject.toml",
+                ),
+                SetuptoolsScmMigration(name=Fixes.setuptools_scm, repo=repo),
+                GitCommit(
+                    name="commit",
+                    repo=repo,
+                    message="BLD: migrate to setuptools-scm",
+                ),
+            ]
+        )
+
     return fixes
 
 
@@ -415,10 +611,14 @@ def run_fixes(
     fixes: list[Fix],
     dry_run: bool = True,
     skip: Optional[list[str]] = None,
+    only: Optional[list[str]] = None,
 ):
     skip = skip or []
+    only = only or []
     for fix in fixes:
         if fix.name in skip:
+            print(f"({fix.name} skipped)")
+            print()
             continue
 
         desc = textwrap.indent(str(fix), prefix="    ")
@@ -427,6 +627,8 @@ def run_fixes(
 
     if not dry_run:
         for fix in fixes:
+            if only and fix.name not in only:
+                continue
             if fix.name in skip:
                 continue
 
@@ -439,15 +641,25 @@ def run_fixes(
                     break
 
 
-def main(repo_root: str, dry_run: bool = True):
+def main(
+    repo_root: str,
+    dry_run: bool = True,
+    python_version: str = "3.9",
+    skip: Optional[list[str]] = None,
+    optional_fixes: Optional[list[str]] = None,
+    only: Optional[list[str]] = None,
+):
     root = pathlib.Path(repo_root).expanduser().resolve()
+    print(optional_fixes)
     repo = Repository(
         root=root,
         template_defaults=get_template_defaults(root),
+        python_version=python_version,
+        optional_fixes=optional_fixes or [],
     )
 
     fixes = get_fixes(repo)
-    return run_fixes(fixes, dry_run=dry_run)
+    return run_fixes(fixes, dry_run=dry_run, skip=skip, only=only)
 
 
 def _create_argparser() -> argparse.ArgumentParser:
@@ -461,6 +673,15 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_root", type=str)
     parser.add_argument("--write", action="store_false", dest="dry_run")
+    parser.add_argument("--python-version", type=str, default="3.9")
+    parser.add_argument("--skip", type=str, action="append")
+    parser.add_argument("--only", type=str, action="append")
+    parser.add_argument(
+        "--optional-fix",
+        type=str,
+        action="append",
+        dest="optional_fixes"
+    )
     return parser
 
 
