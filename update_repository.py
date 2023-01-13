@@ -44,19 +44,25 @@ class Fixes(str, enum.Enum):
 class Repository:
     root: pathlib.Path
     template_defaults: dict[str, Any]
+    import_name: str = ""
     python_version: str = "3.9"
-    optional_fixes: list[str] = dataclasses.field(default_factory=list)
 
     @property
     def import_dir(self) -> pathlib.Path:
         # TODO import name in Repository instance
         return self.root / get_repo_name(self.root)
 
-    def run_command(self, command: list[str]):
+    def run_command(self, command: list[str]) -> bool:
         print("Running:", " ".join(command))
-        subprocess.check_call(
+        return not subprocess.check_call(
             command,
-            # shell=True,
+            cwd=self.root,
+        )
+
+    def run_command_with_output(self, command: list[str]) -> bytes:
+        print("Running:", " ".join(command))
+        return subprocess.check_output(
+            command,
             cwd=self.root,
         )
 
@@ -87,6 +93,10 @@ class Fix:
     files: list[pathlib.Path] = dataclasses.field(default_factory=list, init=False)
 
     @property
+    def commit_message(self) -> str:
+        return ""
+
+    @property
     def description(self) -> str:
         raise NotImplementedError()
 
@@ -101,12 +111,12 @@ class NestedFix(Fix):
     nested_fixes: list[Fix] = dataclasses.field(default_factory=list, init=False)
 
     @property
-    def title(self) -> str:
+    def commit_message(self) -> str:
         raise NotImplementedError()
 
     @property
     def description(self) -> str:
-        desc = [self.title]
+        desc = [self.commit_message]
         for idx, fix in enumerate(self.nested_fixes, 1):
             sub_fix_desc = textwrap.indent(fix.description, prefix="    ")
             desc.append(f"{idx}. {sub_fix_desc}")
@@ -120,6 +130,10 @@ class NestedFix(Fix):
 @dataclasses.dataclass(repr=False)
 class GitHubActionsMigration(NestedFix):
     workflow: str = ""
+
+    @property
+    def commit_message(self) -> str:
+        return "CI: migrate to GitHub actions"
 
     def __post_init__(self):
         travis_yml = self.repo.root / ".travis.yml"
@@ -142,10 +156,6 @@ class GitHubActionsMigration(NestedFix):
             ),
         ]
 
-    @property
-    def title(self) -> str:
-        return "Migrate to GitHub Actions"
-
 
 @dataclasses.dataclass(repr=False)
 class UpdateSphinxConfig(Fix):
@@ -154,6 +164,10 @@ class UpdateSphinxConfig(Fix):
     new_contents: str = dataclasses.field(init=False)
     diff: str = dataclasses.field(init=False)
     # year, extensions, ...
+
+    @property
+    def commit_message(self) -> str:
+        return "DOC: update Sphinx configuration"
 
     def __post_init__(self):
         with open(self.file, "rt") as fp:
@@ -202,6 +216,10 @@ class UpdateSphinxConfig(Fix):
 class PyprojectTomlMigration(NestedFix):
     pyproject_toml: str = dataclasses.field(init=False)
 
+    @property
+    def commit_message(self) -> str:
+        return "BLD: migrate to pyproject.toml"
+
     def __post_init__(self):
         self.pyproject_toml = toml.dumps(migrate_setup_py_to_pyproject(self.repo.root))
         self.nested_fixes = [
@@ -219,15 +237,14 @@ class PyprojectTomlMigration(NestedFix):
             ),
         ]
 
-    @property
-    def title(self) -> str:
-        return "Migrate to pyproject.toml"
-
 
 @dataclasses.dataclass(repr=False)
 class SetuptoolsScmMigration(NestedFix):
+    @property
+    def commit_message(self) -> str:
+        return "BLD: migrate to setuptools-scm"
+
     def __post_init__(self):
-        self.pyproject_toml = toml.dumps(migrate_setup_py_to_pyproject(self.repo.root))
         self.nested_fixes = [
             DeleteFiles(
                 name="delete_versioneer",
@@ -265,10 +282,6 @@ class SetuptoolsScmMigration(NestedFix):
             ),
         ]
 
-    @property
-    def title(self) -> str:
-        return "Migrate to pyproject.toml"
-
 
 @dataclasses.dataclass(repr=False)
 class AddFile(Fix):
@@ -278,6 +291,10 @@ class AddFile(Fix):
 
     def __post_init__(self):
         self.files = [self.file]
+
+    @property
+    def commit_message(self) -> str:
+        return ""
 
     @property
     def description(self) -> str:
@@ -298,6 +315,10 @@ class AppendLines(Fix):
     file: pathlib.Path
     lines: list[str]
     skip_if_present: bool = True
+
+    @property
+    def commit_message(self) -> str:
+        return ""
 
     def __post_init__(self):
         self.files = [self.file]
@@ -325,6 +346,10 @@ class RemoveLines(Fix):
 
     def __post_init__(self):
         self.files = [self.file]
+
+    @property
+    def commit_message(self) -> str:
+        return ""
 
     @property
     def description(self) -> str:
@@ -365,6 +390,10 @@ class AddFileFromTemplate(Fix):
     existing_contents: Optional[str] = dataclasses.field(init=False)
     changed: bool = False
     mode: str = "wt"
+
+    @property
+    def commit_message(self) -> str:
+        return f"MNT: updating {self.template_file.name} from template"
 
     def __post_init__(self):
         template_file = self.source_base_path / self.template_file
@@ -417,6 +446,11 @@ class DeleteFiles(Fix):
     missing_ok: bool = False
 
     @property
+    def commit_message(self) -> str:
+        files = ", ".join(file.name for file in self.files)
+        return f"CLN: removing {files}"
+
+    @property
     def description(self) -> str:
         return f"Delete these files: {self.files}"
 
@@ -433,6 +467,10 @@ class DeleteFiles(Fix):
 @dataclasses.dataclass(repr=False)
 class RunPyupgrade(Fix):
     skip_files: list[str] = dataclasses.field(default_factory=list)
+
+    @property
+    def commit_message(self) -> str:
+        return f"STY: update repository to Python {self.repo.python_version}+ standards"
 
     @property
     def description(self) -> str:
@@ -519,6 +557,12 @@ def get_fixes(repo: Repository) -> list[Fix]:
         TemplateFile(
             template_file=".coveragerc",
         ),
+        TemplateFile(
+            template_file=".git_archival.txt",
+        ),
+        TemplateFile(
+            template_file=".gitattributes",
+        ),
     ]
 
     for file in to_update:
@@ -549,59 +593,27 @@ def get_fixes(repo: Repository) -> list[Fix]:
             )
         )
 
-    fixes.append(
-        GitCommit(
-            name="commit",
-            repo=repo,
-            message="MNT: update repository with pcds-migration-tools",
-        )
-    )
-
     sphinx_config = repo.root / "docs" / "source" / "conf.py"
     if sphinx_config.exists():
         sphinx_update = UpdateSphinxConfig(
             name="update_sphinx_config", repo=repo, file=sphinx_config
         )
         if sphinx_update.changed:
-            fixes.extend(
-                [
-                    sphinx_update,
-                    GitCommit(
-                        name="commit",
-                        repo=repo,
-                        message="DOC: update sphinx config with pcds-migration-tools",
-                    ),
-                ]
-            )
+            fixes.append(sphinx_update)
 
-    fixes.extend(
-        [
-            RunPyupgrade("pyupgrade", repo, skip_files=pyupgrade_skip_files),
-            GitCommit(
-                name="commit",
-                repo=repo,
-                message=f"STY: update repository to Python {repo.python_version}+ standards",
-            ),
-        ]
-    )
+    fixes.append(RunPyupgrade("pyupgrade", repo, skip_files=pyupgrade_skip_files))
 
     setup_py = repo.root / "setup.py"
-    if setup_py.exists() and Fixes.pyproject_toml in repo.optional_fixes:
-        fixes.extend(
-            [
-                PyprojectTomlMigration(name=Fixes.pyproject_toml, repo=repo),
-                GitCommit(
-                    name="commit",
-                    repo=repo,
-                    message="BLD: migrate to pyproject.toml",
-                ),
-                SetuptoolsScmMigration(name=Fixes.setuptools_scm, repo=repo),
-                GitCommit(
-                    name="commit",
-                    repo=repo,
-                    message="BLD: migrate to setuptools-scm",
-                ),
-            ]
+    if setup_py.exists():
+        fixes.append(
+            PyprojectTomlMigration(name=Fixes.pyproject_toml, repo=repo)
+        )
+
+    versioneer = repo.root / "versioneer.py"
+    new_version_py = repo.import_dir / "version.py"
+    if versioneer.exists() or not new_version_py.exists():
+        fixes.append(
+            SetuptoolsScmMigration(name=Fixes.setuptools_scm, repo=repo)
         )
 
     return fixes
@@ -626,11 +638,16 @@ def run_fixes(
         print()
 
     if not dry_run:
+        print("\n" * 5)
+        print("** Running fixes...")
         for fix in fixes:
             if only and fix.name not in only:
                 continue
             if fix.name in skip:
                 continue
+
+            desc = textwrap.indent(str(fix), prefix="    ")
+            print(f"{desc.lstrip()}")
 
             try:
                 fix.run()
@@ -639,6 +656,24 @@ def run_fixes(
                 logger.error("Continue? [Y/n]")
                 if input().lower() not in ("", "y", "yes"):
                     break
+            if fix.commit_message:
+                commit = GitCommit(
+                    name="git_commit",
+                    repo=fix.repo,
+                    message=(
+                        f"{fix.commit_message}\n\n"
+                        f"Performed by pcds-migration-tools {fix.__class__.__name__}"
+                    ),
+                )
+
+                git_status = fix.repo.run_command_with_output(
+                    ["git", "status", "--porcelain"]
+                )
+                if not git_status:
+                    logger.warning("No changes to the repository in this step.")
+                    logger.warning("Skipping commit.")
+                else:
+                    commit.run()
 
 
 def main(
@@ -646,7 +681,6 @@ def main(
     dry_run: bool = True,
     python_version: str = "3.9",
     skip: Optional[list[str]] = None,
-    optional_fixes: Optional[list[str]] = None,
     only: Optional[list[str]] = None,
 ):
     root = pathlib.Path(repo_root).expanduser().resolve()
@@ -654,7 +688,6 @@ def main(
         root=root,
         template_defaults=get_template_defaults(root),
         python_version=python_version,
-        optional_fixes=optional_fixes or [],
     )
 
     fixes = get_fixes(repo)
@@ -675,12 +708,6 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--python-version", type=str, default="3.9")
     parser.add_argument("--skip", type=str, action="append")
     parser.add_argument("--only", type=str, action="append")
-    parser.add_argument(
-        "--enable",
-        type=str,
-        action="append",
-        dest="optional_fixes"
-    )
     return parser
 
 
