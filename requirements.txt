@@ -1,5 +1,7 @@
+apischema
 black
 jinja2
+pre-commit
 pycln
 pyupgrade
 toml
