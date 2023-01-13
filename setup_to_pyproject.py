@@ -99,6 +99,8 @@ def convert_entrypoints(
 ) -> Any | None:
     if console_scripts:
         project["scripts"] = convert_entrypoint(console_scripts)
+    else:
+        project["scripts"] = []
     if gui_scripts:
         project["gui-scripts"] = convert_entrypoint(gui_scripts)
     if others:
