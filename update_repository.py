@@ -260,17 +260,20 @@ class SetuptoolsScmMigration(NestedFix):
                 repo=self.repo,
                 file=self.repo.import_dir / "__init__.py",
                 lines=[
-                    "from ._version import get_versions",
+                    "__version__ = _version.get_versions()['version']",
                     "__version__ = get_versions()['version']",
                     "del get_versions",
+                    "del _version",
+                    "from . import _version",
+                    "from ._version import get_versions",
                 ]
             ),
-            AppendLines(
+            PrependLines(
                 name="setuptools_scm_version",
                 repo=self.repo,
                 file=self.repo.import_dir / "__init__.py",
                 lines=[
-                    "from .version import __version__",
+                    "from .version import __version__  # noqa: F401",
                 ]
             ),
             AddFileFromTemplate(
@@ -308,6 +311,35 @@ class AddFile(Fix):
             print(self.contents.rstrip(), file=fp)
 
         self.repo.run_command(["git", "add", str(self.file)])
+
+
+@dataclasses.dataclass(repr=False)
+class PrependLines(Fix):
+    file: pathlib.Path
+    lines: list[str]
+    skip_if_present: bool = True
+
+    @property
+    def commit_message(self) -> str:
+        return ""
+
+    def __post_init__(self):
+        self.files = [self.file]
+
+    @property
+    def description(self) -> str:
+        return f"Prepend lines to {self.file}:\n{self.lines}"
+
+    def run(self):
+        with open(self.file) as fp:
+            lines = fp.read().splitlines()
+
+        for line in self.lines:
+            if not self.skip_if_present or line not in lines:
+                lines.insert(0, line)
+
+        with open(self.file, "wt") as fp:
+            print("\n".join(lines).rstrip(), file=fp)
 
 
 @dataclasses.dataclass(repr=False)
