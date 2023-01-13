@@ -52,6 +52,15 @@ class Repository:
         # TODO import name in Repository instance
         return self.root / get_repo_name(self.root)
 
+    def render_from_template(self, template_file: pathlib.Path, /, **template_args: Any) -> str:
+        with open(template_file, "rt") as fp:
+            template = jinja2.Template(fp.read())
+
+        template_args = dict(self.template_defaults)
+        template_args.update(template_args)
+
+        return template.render(**template_args)
+
     def run_command(self, command: list[str]) -> bool:
         print("Running:", " ".join(command))
         return not subprocess.check_call(
@@ -234,6 +243,39 @@ class PyprojectTomlMigration(NestedFix):
                 repo=self.repo,
                 file=self.repo.root / "pyproject.toml",
                 contents=self.pyproject_toml,
+            ),
+        ]
+
+
+@dataclasses.dataclass(repr=False)
+class UpdateCondaRecipe(NestedFix):
+    @property
+    def commit_message(self) -> str:
+        return "BLD: update conda-recipe"
+
+    def __post_init__(self):
+        template = self.repo.render_from_template(
+            cookiecutter_root / "conda-recipe" / "meta.yaml"
+        ).splitlines()
+        with open(self.repo.root / "conda-recipe" / "meta.yaml", "rt") as fp:
+            existing = fp.read().splitlines()
+
+        pre_requirements = template[:template.index("requirements:")]
+        post_requirements = existing[existing.index("requirements:"):]
+        new_meta_yaml = "\n".join(pre_requirements + post_requirements)
+
+        self.nested_fixes = [
+            DeleteFiles(
+                name="delete_build.sh",
+                repo=self.repo,
+                files=[self.repo.root / "conda-recipe" / "build.sh"],
+                missing_ok=True,
+            ),
+            AddFile(
+                name="update_meta.yaml",
+                repo=self.repo,
+                file=self.repo.root / "conda-recipe" / "meta.yaml",
+                contents=new_meta_yaml,
             ),
         ]
 
@@ -429,14 +471,9 @@ class AddFileFromTemplate(Fix):
 
     def __post_init__(self):
         template_file = self.source_base_path / self.template_file
-
-        with open(template_file, "rt") as fp:
-            template = jinja2.Template(fp.read())
-
-        template_args = dict(self.repo.template_defaults)
-        template_args.update(self.template_args)
-
-        self.contents = template.render(**template_args)
+        self.contents = self.repo.render_from_template(
+            template_file, **self.template_args
+        )
 
         target_file = self.repo.root / self.dest_file
         self.files = [target_file]
@@ -720,6 +757,13 @@ def get_fixes(repo: Repository) -> list[Fix]:
         fixes.append(
             SetuptoolsScmMigration(name=Fixes.setuptools_scm, repo=repo)
         )
+
+    fixes.append(
+        UpdateCondaRecipe(
+            name="update_conda_recipe",
+            repo=repo,
+        )
+    )
 
     fixes.append(
         RunPycln(name="run_pycln", repo=repo)
