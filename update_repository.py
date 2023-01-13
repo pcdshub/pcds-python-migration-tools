@@ -651,7 +651,7 @@ def get_fixes(repo: Repository) -> list[Fix]:
     return fixes
 
 
-def start_commit(fix: Fix) -> GitCommit:
+def start_commit(fix: Fix) -> Optional[GitCommit]:
     commit = GitCommit(
         name="git_commit",
         repo=fix.repo,
@@ -667,6 +667,7 @@ def start_commit(fix: Fix) -> GitCommit:
     if not git_status:
         logger.warning("No changes to the repository in this step.")
         logger.warning("Skipping commit.")
+        return None
 
     return commit
 
@@ -715,6 +716,9 @@ def run_fixes(
             continue
 
         commit = start_commit(fix)
+        if commit is None:
+            continue
+
         try:
             commit.run()
         except Exception:
