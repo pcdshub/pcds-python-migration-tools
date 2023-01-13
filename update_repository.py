@@ -651,6 +651,26 @@ def get_fixes(repo: Repository) -> list[Fix]:
     return fixes
 
 
+def start_commit(fix: Fix) -> GitCommit:
+    commit = GitCommit(
+        name="git_commit",
+        repo=fix.repo,
+        message=(
+            f"{fix.commit_message}\n\n"
+            f"Performed by pcds-migration-tools {fix.__class__.__name__}"
+        ),
+    )
+
+    git_status = fix.repo.run_command_with_output(
+        ["git", "status", "--porcelain"]
+    )
+    if not git_status:
+        logger.warning("No changes to the repository in this step.")
+        logger.warning("Skipping commit.")
+
+    return commit
+
+
 def run_fixes(
     fixes: list[Fix],
     dry_run: bool = True,
@@ -669,43 +689,39 @@ def run_fixes(
         print(f"{desc.lstrip()}")
         print()
 
-    if not dry_run:
-        print("\n" * 5)
-        print("** Running fixes...")
-        for fix in fixes:
-            if only and fix.name not in only:
-                continue
-            if fix.name in skip:
-                continue
+    if dry_run:
+        return
 
-            desc = textwrap.indent(str(fix), prefix="    ")
-            print(f"{desc.lstrip()}")
+    print("\n" * 5)
+    print("** Running fixes...")
+    for fix in fixes:
+        if only and fix.name not in only:
+            continue
+        if fix.name in skip:
+            continue
 
-            try:
-                fix.run()
-            except Exception:
-                logger.error("Failed to run fix: %s", str(fix), exc_info=True)
-                logger.error("Continue? [Y/n]")
-                if input().lower() not in ("", "y", "yes"):
-                    break
-            if fix.commit_message:
-                commit = GitCommit(
-                    name="git_commit",
-                    repo=fix.repo,
-                    message=(
-                        f"{fix.commit_message}\n\n"
-                        f"Performed by pcds-migration-tools {fix.__class__.__name__}"
-                    ),
-                )
+        desc = textwrap.indent(str(fix), prefix="    ")
+        print(f"{desc.lstrip()}")
 
-                git_status = fix.repo.run_command_with_output(
-                    ["git", "status", "--porcelain"]
-                )
-                if not git_status:
-                    logger.warning("No changes to the repository in this step.")
-                    logger.warning("Skipping commit.")
-                else:
-                    commit.run()
+        try:
+            fix.run()
+        except Exception:
+            logger.error("Failed to run fix: %s", str(fix), exc_info=True)
+            logger.error("Continue? [Y/n]")
+            if input().lower() not in ("", "y", "yes"):
+                break
+
+        if not fix.commit_message:
+            continue
+
+        commit = start_commit(fix)
+        try:
+            commit.run()
+        except Exception:
+            logger.error(f"Failed to commit changes:\n{commit.message}")
+            logger.error("Continue? [Y/n]")
+            if input().lower() not in ("", "y", "yes"):
+                break
 
 
 def main(
