@@ -525,6 +525,71 @@ class RunPyupgrade(Fix):
         pyupgrade_main(argv=[f"--py{ver}-plus", *python_source_files])
 
 
+@dataclasses.dataclass(repr=False)
+class Reformat(Fix):
+    files: list[pathlib.Path] = dataclasses.field(default_factory=list)
+    tool: str = "black"
+    arguments: list[str] = dataclasses.field(default_factory=list)
+
+    @property
+    def commit_message(self) -> str:
+        return f"STY: reformatting code with {self.tool}"
+
+    @property
+    def description(self) -> str:
+        return f"Run {self.tool} to reformat {self.files}"
+
+    def run(self):
+        files = [
+            str(file.resolve())
+            for file in self.files or [self.repo.root]
+        ]
+        self.repo.run_command([self.tool, *files, *self.arguments])
+
+
+@dataclasses.dataclass(repr=False)
+class RunPycln(Fix):
+    files: list[pathlib.Path] = dataclasses.field(default_factory=list)
+    arguments: list[str] = dataclasses.field(
+        default_factory=lambda: ["--all"]
+    )
+
+    @property
+    def commit_message(self) -> str:
+        return "MNT: cleaning code with pycln"
+
+    @property
+    def description(self) -> str:
+        return "Cleaning code with pycln"
+
+    def run(self):
+        files = [
+            str(file.resolve())
+            for file in self.files or [self.repo.root]
+        ]
+        self.repo.run_command(["pycln", *files, *self.arguments])
+
+
+@dataclasses.dataclass(repr=False)
+class RunPrecommit(Fix):
+    files: list[pathlib.Path] = dataclasses.field(default_factory=list)
+    arguments: list[str] = dataclasses.field(
+        default_factory=lambda: ["--all-files"]
+    )
+
+    @property
+    def commit_message(self) -> str:
+        return "MNT: 'pre-commit run'"
+
+    @property
+    def description(self) -> str:
+        return "Running pre-commit"
+
+    def run(self):
+        files = [str(file.resolve()) for file in self.files]
+        self.repo.run_command(["pre-commit", "run", *files, *self.arguments])
+
+
 @dataclasses.dataclass
 class GitCommit(Fix):
     message: str
@@ -633,6 +698,14 @@ def get_fixes(repo: Repository) -> list[Fix]:
         if sphinx_update.changed:
             fixes.append(sphinx_update)
 
+        fixes.append(
+            Reformat(
+                name="reformat_sphinx_config",
+                repo=repo,
+                files=[sphinx_config],
+            )
+        )
+
     fixes.append(RunPyupgrade("pyupgrade", repo, skip_files=pyupgrade_skip_files))
 
     setup_py = repo.root / "setup.py"
@@ -647,6 +720,14 @@ def get_fixes(repo: Repository) -> list[Fix]:
         fixes.append(
             SetuptoolsScmMigration(name=Fixes.setuptools_scm, repo=repo)
         )
+
+    fixes.append(
+        RunPycln(name="run_pycln", repo=repo)
+    )
+
+    fixes.append(
+        RunPrecommit(name="run_precommit", repo=repo)
+    )
 
     return fixes
 

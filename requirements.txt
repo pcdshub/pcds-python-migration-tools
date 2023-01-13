@@ -1,3 +1,5 @@
+black
 jinja2
+pycln
 pyupgrade
 toml
