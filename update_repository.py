@@ -50,8 +50,7 @@ class Repository:
 
     @property
     def import_dir(self) -> pathlib.Path:
-        # TODO import name in Repository instance
-        return self.root / get_repo_name(self.root)
+        return self.root / self.import_name
 
     def render_from_template(self, template_file: pathlib.Path, /, **template_args: Any) -> str:
         with open(template_file, "rt") as fp:
@@ -137,6 +136,43 @@ class NestedFix(Fix):
             fix.run()
 
 
+@dataclasses.dataclass()
+class AddDependencies(Fix):
+    dependencies: list[str]
+    type: str = "install"
+
+    @property
+    def commit_message(self) -> str:
+        deps = ", ".join(self.dependencies)
+        return f"BLD: add {self.type} dependencies: {deps}"
+
+    @property
+    def requirements_file(self) -> pathlib.Path:
+        files = {
+            "install": ["requirements.txt"],
+            "test": ["dev-requirements.txt"],
+            "docs": ["docs-requirements.txt", "dev-requirements.txt"],
+        }[self.type]
+        for file in files:
+            if (self.repo.root / file).exists():
+                return self.repo.root / file
+        return self.repo.root / files[0]
+
+    def run(self):
+        req = self.requirements_file
+        deps = []
+        if req.exists():
+            with open(req, "rt") as fp:
+                deps = fp.read().splitlines()
+
+        for dep in self.dependencies:
+            if dep not in deps:
+                deps.append(dep)
+
+        with open(req, "wt") as fp:
+            print("\n".join(deps), file=fp)
+
+
 @dataclasses.dataclass(repr=False)
 class GitHubActionsMigration(NestedFix):
     workflow: str = ""
@@ -198,6 +234,16 @@ class UpdateSphinxConfig(Fix):
                 'extensions = [\n    "sphinxcontrib.jquery",\n',
             )
 
+        self.new_contents = self.new_contents.replace(
+            f"version = {self.repo.import_name}.__version__",
+            f"version = str({self.repo.import_name}.__version__)",
+        )
+
+        self.new_contents = self.new_contents.replace(
+            f"release = {self.repo.import_name}.__version__",
+            f"release = str({self.repo.import_name}.__version__)",
+        )
+
         diff = difflib.unified_diff(
             self.original_contents.splitlines(),
             self.new_contents.splitlines(),
@@ -220,6 +266,39 @@ class UpdateSphinxConfig(Fix):
         self.file.parent.mkdir(parents=True, exist_ok=True)
         with open(self.file, "wt") as fp:
             print(self.new_contents.rstrip(), file=fp)
+
+
+@dataclasses.dataclass(repr=False)
+class UpdateSphinx(NestedFix):
+    config_file: pathlib.Path
+
+    @property
+    def commit_message(self) -> str:
+        return "DOC: update Sphinx configuration"
+
+    @property
+    def description(self) -> str:
+        return "Update Sphinx configuration"
+
+    def __post_init__(self):
+        self.nested_fixes = [
+            UpdateSphinxConfig(
+                name="update_sphinx_config",
+                repo=self.repo,
+                file=self.config_file,
+            ),
+            AddDependencies(
+                name="add_sphinx_deps",
+                repo=self.repo,
+                dependencies=["sphinxcontrib-jquery"],
+                type="docs",
+            ),
+            Reformat(
+                name="reformat_sphinx_config",
+                repo=self.repo,
+                files=[self.config_file],
+            ),
+        ]
 
 
 @dataclasses.dataclass(repr=False)
@@ -763,19 +842,10 @@ def get_fixes(repo: Repository) -> list[Fix]:
 
     sphinx_config = repo.root / "docs" / "source" / "conf.py"
     if sphinx_config.exists():
-        sphinx_update = UpdateSphinxConfig(
-            name="update_sphinx_config", repo=repo, file=sphinx_config
+        sphinx_update = UpdateSphinx(
+            name="update_sphinx", repo=repo, config_file=sphinx_config
         )
-        if sphinx_update.changed:
-            fixes.append(sphinx_update)
-
-        fixes.append(
-            Reformat(
-                name="reformat_sphinx_config",
-                repo=repo,
-                files=[sphinx_config],
-            )
-        )
+        fixes.append(sphinx_update)
 
     fixes.append(RunPyupgrade("pyupgrade", repo, skip_files=pyupgrade_skip_files))
 
@@ -893,14 +963,17 @@ def main(
     python_version: str = "3.9",
     skip: Optional[list[str]] = None,
     only: Optional[list[str]] = None,
+    import_name: Optional[str] = None,
 ):
     root = pathlib.Path(repo_root).expanduser().resolve()
     repo = Repository(
         root=root,
         template_defaults=get_template_defaults(root),
         python_version=python_version,
+        import_name=import_name or get_repo_name(root),  # TODO
     )
 
+    repo.template_defaults["cookiecutter"].import_name = repo.import_name
     fixes = get_fixes(repo)
     return run_fixes(fixes, dry_run=dry_run, skip=skip, only=only)
 
@@ -919,6 +992,7 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("--python-version", type=str, default="3.9")
     parser.add_argument("--skip", type=str, action="append")
     parser.add_argument("--only", type=str, action="append")
+    parser.add_argument("--import-name", type=str, required=False)
     return parser
 
 
