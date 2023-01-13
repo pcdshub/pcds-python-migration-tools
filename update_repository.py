@@ -14,6 +14,7 @@ from typing import Any, Optional, Union
 
 import jinja2
 import toml
+import yaml
 
 from detravisify import migrate_travis_to_gha
 from setup_to_pyproject import migrate as migrate_setup_py_to_pyproject
@@ -249,21 +250,54 @@ class PyprojectTomlMigration(NestedFix):
 
 @dataclasses.dataclass(repr=False)
 class UpdateCondaRecipe(NestedFix):
+    remove_build_deps: list[str] = dataclasses.field(
+        default_factory=lambda: ["setuptools"]
+    )
+    add_build_deps: list[str] = dataclasses.field(
+        default_factory=lambda: ["setuptools_scm", "pip"]
+    )
+
     @property
     def commit_message(self) -> str:
         return "BLD: update conda-recipe"
 
+    def _fix_requirements(self, template: list[str], existing: list[str]) -> str:
+        # The idea here is that boilerplate exists before the requirements but
+        # not after.
+        # Pick up the boilerplate from the template, but use the rest from
+        # the existing recipe.
+        # Add dependencies if required.
+        # Returns new conda recipe.
+        requirements_and_after = existing[existing.index("requirements:"):]
+
+        conf = yaml.load("\n".join(requirements_and_after), Loader=yaml.Loader)
+        build_deps = conf["requirements"]["build"]
+        for dep in self.remove_build_deps:
+            while dep in build_deps:
+                build_deps.remove(dep)
+        for dep in self.add_build_deps:
+            if dep not in build_deps:
+                build_deps.append(dep)
+
+        new_meta_yaml = template[:template.index("requirements:")]
+        other_sections = set(conf) - {"package", "source", "build", "requirements", "test", "about"}
+        for section in ["requirements", "test", "about"] + list(other_sections):
+            if section in conf:
+                new_meta_yaml.append("\n")
+                new_meta_yaml.append(yaml.dump({section: conf[section]}))
+        return "\n".join(new_meta_yaml)
+
     def __post_init__(self):
         template = self.repo.render_from_template(
             cookiecutter_root / "conda-recipe" / "meta.yaml"
-        ).splitlines()
+        )
         with open(self.repo.root / "conda-recipe" / "meta.yaml", "rt") as fp:
-            existing = fp.read().splitlines()
+            existing = fp.read()
 
-        pre_requirements = template[:template.index("requirements:")]
-        post_requirements = existing[existing.index("requirements:"):]
-        new_meta_yaml = "\n".join(pre_requirements + post_requirements)
-
+        new_meta_yaml = self._fix_requirements(
+            template.splitlines(),
+            existing.splitlines(),
+        )
         self.nested_fixes = [
             DeleteFiles(
                 name="delete_build.sh",
