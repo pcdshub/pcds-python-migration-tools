@@ -1,0 +1,72 @@
+# Ref: https://graphql.org/learn/queries/
+# Ref: https://docs.github.com/en/graphql/reference/queries
+
+fragment repositoryInfo on RepositoryInfo {
+  description
+  homepageUrl
+  name
+  nameWithOwner
+  ... on Node {
+    id
+  }
+}
+
+query showRepositoryInfo($owner:String!, $repo:String!) {
+  repository(name: $repo, owner: $owner) {
+    ...repositoryInfo
+  }
+}
+
+fragment repositoryPaging on RepositoryConnection {
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+  totalCount
+}
+
+query listAllReposInOrg($orgLogin: String!, $endCursor: String) {
+  organization(login: $orgLogin) {
+    repositories(first: 100, after: $endCursor) {
+      nodes {
+        name
+      }
+      ...repositoryPaging
+    }
+  }
+}
+
+query allOrgRepoDirectCollaborators($orgLogin: String!, $endCursor: String) {
+  organization(login: $orgLogin) {
+    repositories(first: 100, after: $endCursor) {
+      nodes {
+        name
+        isArchived
+        collaborators(affiliation: DIRECT) {
+          edges {
+            node {
+              login
+            }
+            permission
+            permissionSources {
+              permission
+              source {
+                __typename
+                ... on Organization {
+                  login
+                }
+                ... on Repository {
+                  name
+                }
+                ... on Team {
+                  slug
+                }
+              }
+            }
+          }
+        }
+      }
+      ...repositoryPaging
+    }
+  }
+}
