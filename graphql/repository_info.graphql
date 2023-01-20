@@ -11,8 +11,35 @@ fragment repositoryInfo on RepositoryInfo {
   }
 }
 
+fragment deploymentProtectionRule on DeploymentProtectionRule
+{
+  timeout
+  reviewers(first:100) {
+    nodes {
+      ... on Team {
+        combinedSlug
+      }
+      ... on User {
+        login
+        name
+      }
+    }
+  }
+}
+
 query showRepositoryInfo($owner:String!, $repo:String!) {
   repository(name: $repo, owner: $owner) {
+    environments(first: 10) {
+      nodes {
+        id
+        name
+        protectionRules(first: 100) {
+          nodes {
+            ...deploymentProtectionRule
+          }
+        }
+      }
+    }
     ...repositoryInfo
   }
 }
@@ -67,6 +94,26 @@ query allOrgRepoDirectCollaborators($orgLogin: String!, $endCursor: String) {
         }
       }
       ...repositoryPaging
+    }
+  }
+}
+
+mutation createEnvironment(
+    $repositoryId:ID!,
+    $name:String!,
+) {
+  createEnvironment(input: {
+    name: $name
+    repositoryId: $repositoryId
+  }) {
+    environment {
+      id
+      name
+      protectionRules(first: 100) {
+        nodes {
+          ...deploymentProtectionRule
+        }
+      }
     }
   }
 }

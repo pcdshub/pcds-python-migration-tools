@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import collections
 import dataclasses
 import functools
 import json
 import pathlib
 import subprocess
 from dataclasses import field
-from typing import Any
+from typing import Any, Generic, TypeVar, Union
 
 import apischema
 from apischema.metadata import alias
@@ -75,16 +76,28 @@ def gh_api_graphql(
     return json.loads(raw_json)
 
 
-def get_repository_information(
-    owner: str, repo: str, hostname: str = "github.com"
-) -> dict:
-    return gh_api_graphql(
-        get_packaged_graphql("repository_info.graphql"),
-        operationName="showRepositoryInfo",
-        owner=owner,
-        repo=repo,
-    )["data"]["repository"]
-    # f"repos/{owner}/{repo}", hostname=hostname)
+def gh_graphql_describe(type_: str):
+    return gh_api_graphql(query='''\
+        query {
+          __type(name: "''' + type_ + '''") {
+            name
+            kind
+            description
+            fields {
+                name
+                type {
+                    name
+                    kind
+                    ofType {
+                        name
+                        kind
+                    }
+                }
+                description
+            }
+          }
+        }
+''')
 
 
 class Serializable:
@@ -176,11 +189,54 @@ class BranchProtection(Serializable):
         ]
 
 
+T = TypeVar("T")
+
+
+@dataclasses.dataclass
+class NodeList(collections.UserList, Generic[T]):
+    nodes: list[T]
+
+    @property
+    def data(self):
+        return self.nodes
+
+    def __str__(self):
+        return repr(self.data)
+
+    def __repr__(self):
+        return repr(self.data)
+
+
+@dataclasses.dataclass
+class User(Serializable):
+    login: str
+    name: str
+
+
+@dataclasses.dataclass
+class Team(Serializable):
+    combined_slug: str = field(metadata=alias("combinedSlug"))
+
+
+@dataclasses.dataclass
+class ProtectionRule(Serializable):
+    timeout: int
+    reviewers: NodeList[Union[User, Team]]
+
+
+@dataclasses.dataclass
+class Environment(Serializable):
+    id: str
+    name: str
+    protectionRules: NodeList[ProtectionRule]
+
+
 @dataclasses.dataclass
 class Repository(Serializable):
     id: str
     name: str
     description: str
+    environments: NodeList[Environment]
     full_name: str = field(metadata=alias("nameWithOwner"))
     homepage_url: str = field(metadata=alias("homepageUrl"))
 
@@ -196,15 +252,32 @@ class Repository(Serializable):
     def from_name(
         cls, owner: str, repo: str, hostname: str = "github.com"
     ) -> Repository:
-        info = get_repository_information(owner=owner, repo=repo, hostname=hostname)
-        import json
-
+        info = gh_api_graphql(
+            get_packaged_graphql("repository_info.graphql"),
+            hostname=hostname,
+            operationName="showRepositoryInfo",
+            owner=owner,
+            repo=repo,
+        )["data"]["repository"]
         print(json.dumps(info, indent=2))
         return cls.from_dict(info)
+
+    def create_environment(self, name: str):
+        data = gh_api_graphql(
+            get_packaged_graphql("repository_info.graphql"),
+            operationName="createEnvironment",
+            repositoryId=self.id,
+            name=name,
+        )["data"]
+        env = data["createEnvironment"]["environment"]
+        return Environment.from_dict(env)
 
 
 def main(owner: str, repo_name: str):
     repo = Repository.from_name(owner=owner, repo=repo_name)
+    print("Creating environment gh-pages")
+    repo.create_environment("gh-pages")
+
     print("Repository:", repo)
     for prot in BranchProtection.from_repository(repo):
         print("Deleting branch protection setting")
@@ -217,3 +290,5 @@ def main(owner: str, repo_name: str):
 
 if __name__ == "__main__":
     main("pcdshub", "pcds-ci-test-repo-python")
+    # info = gh_graphql_describe("Environment")
+    # print(json.dumps(info, indent=2))
