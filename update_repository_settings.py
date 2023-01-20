@@ -7,7 +7,7 @@ import json
 import pathlib
 import subprocess
 from dataclasses import field
-from typing import Any, Generic, TypeVar, Union
+from typing import Any, Generic, Optional, TypeVar, Union
 
 import apischema
 from apischema.metadata import alias
@@ -76,6 +76,36 @@ def gh_api_graphql(
     return json.loads(raw_json)
 
 
+def gh_api_graphql_paginated(
+    query: str,
+    key: tuple[str, ...],
+    hostname: str = "github.com",
+    **params: list[str] | str | bool | int,
+) -> list:
+
+    results = []
+
+    params.pop("endCursor", None)
+    while True:
+        result = gh_api_graphql(
+            query=query, hostname=hostname, **params
+        )["data"]
+        for key_part in key:
+            result = result[key_part]
+
+        page_info = apischema.deserialize(Pagination, result.pop("pageInfo"))
+        result = result["nodes"]
+
+        assert isinstance(result, list)
+        results.extend(result)
+
+        if not page_info.hasNextPage:
+            break
+        params["endCursor"] = page_info.endCursor
+
+    return results
+
+
 def gh_graphql_describe(type_: str):
     return gh_api_graphql(query='''\
         query {
@@ -109,6 +139,12 @@ class Serializable:
 @dataclasses.dataclass
 class Actor(Serializable):
     login: str = ""
+
+
+@dataclasses.dataclass
+class Pagination(Serializable):
+    hasNextPage: bool
+    endCursor: str
 
 
 @dataclasses.dataclass
@@ -235,10 +271,12 @@ class Environment(Serializable):
 class Repository(Serializable):
     id: str
     name: str
-    description: str
-    environments: NodeList[Environment]
+    description: Optional[str]
     full_name: str = field(metadata=alias("nameWithOwner"))
-    homepage_url: str = field(metadata=alias("homepageUrl"))
+    homepage_url: Optional[str] = field(metadata=alias("homepageUrl"))
+    is_archived: bool = field(metadata=alias("isArchived"))
+    collaborators: Optional[dict] = None
+    environments: Optional[NodeList[Environment]] = None
 
     @property
     def owner(self) -> str:
@@ -273,7 +311,25 @@ class Repository(Serializable):
         return Environment.from_dict(env)
 
 
+def find_repositories(owner: str) -> list[Repository]:
+    repositories = gh_api_graphql_paginated(
+        get_packaged_graphql("repository_info.graphql"),
+        key=("organization", "repositories"),
+        operationName="listAllReposInOrg",
+        # operationName="allOrgRepoDirectCollaborators",
+        orgLogin=owner,
+    )
+    return [
+        Repository.from_dict(repo)
+        for repo in repositories
+    ]
+
+
 def main(owner: str, repo_name: str):
+    for repo in find_repositories(owner=owner):
+        print(repo.name, repo.description)
+    return
+
     repo = Repository.from_name(owner=owner, repo=repo_name)
     print("Creating environment gh-pages")
     repo.create_environment("gh-pages")
