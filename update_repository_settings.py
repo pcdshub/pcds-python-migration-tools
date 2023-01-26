@@ -15,14 +15,27 @@ from apischema.metadata import alias
 script_path = pathlib.Path(__file__).resolve().parent
 
 
-default_required_status_checks = [
-    "standard / Conda (3.10) / Python 3.10: conda",
-    "standard / Conda (3.9, true) / Python 3.9: conda",
-    "standard / Documentation / Python 3.9: documentation building",
-    "standard / Pip (3.10) / Python 3.10: pip",
-    "standard / Pip (3.9, true) / Python 3.9: pip",
-    "standard / pre-commit checks / pre-commit",
-]
+default_required_status_checks = {
+    "python": [
+        "standard / Conda (3.10) / Python 3.10: conda",
+        "standard / Conda (3.9, true) / Python 3.9: conda",
+        "standard / Documentation / Python 3.9: documentation building",
+        "standard / Pip (3.10) / Python 3.10: pip",
+        "standard / Pip (3.9, true) / Python 3.9: pip",
+        "standard / pre-commit checks / pre-commit",
+    ],
+    "twincat": [
+        "standard / Documentation / Python 3.9: documentation building",
+        "standard / pragma linting / Pragma Linting",
+        "standard / pytmc summary / Project Summary",
+        # "standard / Documentation / Documentation deployment",
+        # "standard / Style check / Leading tabs",
+        # "standard / Style check / Line IDs (TwinCAT misconfiguration)",
+        # "standard / Style check / Trailing whitespace",
+        # "standard / Syntax check / Experimental Syntax Check",
+        # "standard / pre-commit checks / pre-commit",
+    ],
+}
 
 
 @functools.lru_cache()
@@ -328,6 +341,7 @@ def find_repositories(owner: str) -> list[Repository]:
 def main(owner: str, repo_name: str):
     for repo in find_repositories(owner=owner):
         print(repo.name, repo.description)
+
     return
 
     repo = Repository.from_name(owner=owner, repo=repo_name)
