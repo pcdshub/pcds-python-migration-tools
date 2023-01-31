@@ -358,8 +358,9 @@ def main(
             )
         return
 
+    repo = Repository.from_name(owner=owner, repo=repo_name)
+
     if create_environments:
-        repo = Repository.from_name(owner=owner, repo=repo_name)
         print("Creating environment gh-pages")
         repo.create_environment("gh-pages")
 
