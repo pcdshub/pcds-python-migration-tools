@@ -9,8 +9,9 @@ import string
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
-import apischema
 import yaml
+
+import apischema
 
 
 class Script(str):
