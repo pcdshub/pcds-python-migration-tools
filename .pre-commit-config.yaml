@@ -23,6 +23,6 @@ repos:
     -   id: flake8
 
 -   repo: https://github.com/timothycrosley/isort
-    rev: v5.11.3
+    rev: 5.12.0
     hooks:
     -   id: isort
