@@ -1,0 +1,3 @@
+[submodule "cookiecutter-pcds-python"]
+	path = cookiecutter-pcds-python
+	url = https://github.com/pcdshub/cookiecutter-pcds-python

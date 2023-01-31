@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import collections
 import dataclasses
 import functools
@@ -171,7 +172,7 @@ class BranchProtection(Serializable):
     )
     is_admin_enforced: bool = field(default=False, metadata=alias("isAdminEnforced"))
     required_status_checks: list[str] = field(
-        default_factory=default_required_status_checks.copy,
+        default_factory=default_required_status_checks["python"].copy,
         metadata=alias("requiredStatusCheckContexts"),
     )
     required_approving_review_count: int = field(
@@ -338,27 +339,74 @@ def find_repositories(owner: str) -> list[Repository]:
     ]
 
 
-def main(owner: str, repo_name: str):
-    for repo in find_repositories(owner=owner):
-        print(repo.name, repo.description)
+def main(
+    owner: str,
+    repo_name: str = "",
+    repo_type: str = "python",
+    list_repos: bool = False,
+    create_environments: bool = True,
+    update_branch_protection: bool = True,
+):
+    if list_repos:
+        for repo in find_repositories(owner=owner):
+            print(repo.name, repo.description)
 
-    return
+    if not repo_name:
+        if not list_repos:
+            raise RuntimeError(
+                "Repository name required for anything but --list-repositories"
+            )
+        return
 
-    repo = Repository.from_name(owner=owner, repo=repo_name)
-    print("Creating environment gh-pages")
-    repo.create_environment("gh-pages")
+    if create_environments:
+        repo = Repository.from_name(owner=owner, repo=repo_name)
+        print("Creating environment gh-pages")
+        repo.create_environment("gh-pages")
 
-    print("Repository:", repo)
-    for prot in BranchProtection.from_repository(repo):
-        print("Deleting branch protection setting")
-        prot.delete()
-    prot = BranchProtection()
-    new_rule = prot.create(repo)
-    print("Created rule")
-    print(new_rule)
+    if update_branch_protection:
+        print("Repository:", repo)
+        for prot in BranchProtection.from_repository(repo):
+            print("Deleting branch protection setting")
+            prot.delete()
+        prot = BranchProtection()
+        prot.required_status_checks = default_required_status_checks[repo_type]
+        new_rule = prot.create(repo)
+        print("Created rule")
+        print(new_rule)
+
+
+def _create_argparser() -> argparse.ArgumentParser:
+    """
+    Create an ArgumentParser for detravisify.
+
+    Returns
+    -------
+    argparse.ArgumentParser
+    """
+    parser = argparse.ArgumentParser()
+    parser.add_argument("owner", type=str)
+    parser.add_argument("repo_name", type=str, default="", nargs="?")
+    parser.add_argument("--list-repos", action="store_true", dest="list_repos")
+    parser.add_argument(
+        "--repo-type",
+        type=str,
+        default="python",
+        choices=sorted(default_required_status_checks),
+    )
+    parser.add_argument(
+        "--no-branch-protection", action="store_false", dest="update_branch_protection"
+    )
+    parser.add_argument(
+        "--no-environments", action="store_false", dest="create_environments"
+    )
+    return parser
+
+
+def _main(args=None):
+    """CLI entrypoint."""
+    parser = _create_argparser()
+    return main(**vars(parser.parse_args(args=args)))
 
 
 if __name__ == "__main__":
-    main("pcdshub", "pcds-ci-test-repo-python")
-    # info = gh_graphql_describe("Environment")
-    # print(json.dumps(info, indent=2))
+    _main()

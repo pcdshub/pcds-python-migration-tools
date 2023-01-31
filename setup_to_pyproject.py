@@ -1,19 +1,27 @@
+from __future__ import annotations
+
 import configparser
-import copy
 import os
 import pathlib
 import sys
+from collections.abc import Sequence
 from types import ModuleType
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any
 
 import setuptools as _setuptools
 import toml
+
+script_path = pathlib.Path(__file__).resolve().parent
+cookiecutter_root = (
+    script_path / "cookiecutter-pcds-python" / "{{ cookiecutter.folder_name }}"
+)
+cookiecutter_import_path = cookiecutter_root / "{{ cookiecutter.import_name }}"
 
 
 class SetuptoolsStandin(ModuleType):
     _setup_result = None
 
-    def get_last_setup_kwargs(self) -> Optional[Dict[str, Any]]:
+    def get_last_setup_kwargs(self) -> dict[str, Any] | None:
         return self._setup_result
 
     def find_packages(self, *args, **kwargs):
@@ -30,44 +38,16 @@ setuptools = SetuptoolsStandin(name="setuptools")
 sys.modules["setuptools"] = setuptools
 
 
-_template = {
-    "build-system": {
-        "build-backend": "setuptools.build_meta",
-        "requires": ["setuptools>=45", "setuptools_scm[toml]>=6.2"],
-    },
-    "project": {
-        "authors": [{"name": "SLAC National Accelerator Laboratory"}],
-        "classifiers": ["Programming Language :: Python :: 3"],
-        "description": "",
-        "dynamic": ["version", "readme", "dependencies"],
-        "keywords": [],
-        "license": {"file": "LICENSE.md"},
-        "name": "",
-        "requires-python": ">=3.9",
-        "scripts": {},  # "pmpsdb": "pmpsdb_client:cli.entrypoint"},
-    },
-    "tool": {
-        "setuptools": {
-            "packages": {
-                "find": {
-                    "where": [],
-                    "include": [],
-                    "namespaces": False,
-                }
-            },
-            "dynamic": {
-                "readme": {"file": ["README.md"]},
-                "dependencies": {"file": ["requirements.txt"]},
-                "optional-dependencies": {},
-            },
-        }
-    },
-}
+def get_pyproject_template() -> dict[str, Any]:
+    with open(cookiecutter_root / "pyproject.toml") as fp:
+        contents = fp.read()
+
+    return toml.loads(contents)
 
 
 def find_file_by_options(
     path: pathlib.Path, options: Sequence[str]
-) -> Optional[pathlib.Path]:
+) -> pathlib.Path | None:
     for option in options:
         option = path / option
         if option.exists():
@@ -77,8 +57,8 @@ def find_file_by_options(
 
 
 def pick_file(
-    dest: Dict[str, Any], key: str, path: pathlib.Path, options: Sequence[str]
-) -> Optional[str]:
+    dest: dict[str, Any], key: str, path: pathlib.Path, options: Sequence[str]
+) -> str | None:
     option = find_file_by_options(path, options)
     if option is not None:
         dest[key] = option.name
@@ -88,12 +68,12 @@ def pick_file(
 
 
 def set_if_available(
-    dest: Dict[str, Any],
+    dest: dict[str, Any],
     dest_key: str,
-    source: Dict[str, Any],
-    source_key: Optional[str] = None,
+    source: dict[str, Any],
+    source_key: str | None = None,
     use_default: bool = True,
-) -> Optional[Any]:
+) -> Any | None:
     source_key = source_key or dest_key
     if source_key in source:
         dest[dest_key] = source[source_key]
@@ -104,31 +84,36 @@ def set_if_available(
     return None
 
 
-def convert_entrypoint(entrypoint: List[str]) -> Dict[str, str]:
-    return dict(item.split("=", 1) for item in entrypoint)
+def convert_entrypoint(entrypoint: list[str]) -> dict[str, str]:
+    def split(item: str) -> tuple[str, str]:
+        key, value = item.split("=", 1)
+        return key.strip(), value.strip()
+    return dict(split(item) for item in entrypoint)
 
 
 def convert_entrypoints(
-    project: Dict[str, Any],
-    console_scripts: Optional[List[str]] = None,
-    gui_scripts: Optional[List[str]] = None,
-    **others: List[str],
-) -> Optional[Any]:
+    project: dict[str, Any],
+    console_scripts: list[str] | None = None,
+    gui_scripts: list[str] | None = None,
+    **others: list[str],
+) -> Any | None:
     if console_scripts:
         project["scripts"] = convert_entrypoint(console_scripts)
+    else:
+        project["scripts"] = []
     if gui_scripts:
         project["gui-scripts"] = convert_entrypoint(gui_scripts)
     if others:
         project["entry-points"] = {
-            key: convert_entrypoint(entrypoint) for key, entrypoint in others.items()
+            key.strip(): convert_entrypoint(entrypoint) for key, entrypoint in others.items()
         }
 
 
 def convert_to_pyproject_toml(
     project_path: pathlib.Path,
-    setup_kwargs: Dict[str, Any],
+    setup_kwargs: dict[str, Any],
 ):
-    pyproject = copy.deepcopy(_template)
+    pyproject = get_pyproject_template()
     project = pyproject["project"]
     tool = pyproject["tool"]
     pick_file(
@@ -149,8 +134,10 @@ def convert_to_pyproject_toml(
     set_if_available(project, "classifiers", setup_kwargs)
     set_if_available(project, "keywords", setup_kwargs)
 
+    import_name = project["name"].replace("-", "_")
+
     # find_packages() replacement:
-    tool["setuptools"]["packages"]["find"]["where"] = [project["name"]]
+    tool["setuptools"]["packages"]["find"]["include"] = [import_name]
 
     # Throw away:
     # packages
@@ -173,16 +160,18 @@ def convert_to_pyproject_toml(
         if doc_requirements:
             optional_deps["doc"] = {"file": doc_requirements.name}
 
+    pyproject["tool"]["setuptools_scm"]["write_to"] = f"{import_name}/_version.py"
     return pyproject
 
 
 def migrate(path_to_repository: pathlib.Path):
+
     setup_py = find_file_by_options(path_to_repository, ("setup.py", "_setup.py"))
     if setup_py is None:
         print("No setup.py found", file=sys.stderr)
         sys.exit(1)
 
-    with open(setup_py, "rt") as fp:
+    with open(setup_py) as fp:
         source = fp.read()
 
     os.chdir(setup_py.parent)
@@ -206,6 +195,7 @@ def migrate(path_to_repository: pathlib.Path):
 
             pyproject["tool"][section] = dict(section_data)
 
+    pyproject["tool"].pop("versioneer", None)
     return pyproject
 
 

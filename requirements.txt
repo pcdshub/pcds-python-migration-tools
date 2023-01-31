@@ -1,0 +1,8 @@
+apischema
+black
+jinja2
+pre-commit
+pycln
+pyyaml
+pyupgrade
+toml

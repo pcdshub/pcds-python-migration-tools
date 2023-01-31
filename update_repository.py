@@ -15,9 +15,9 @@ from typing import Any, Optional, Union
 import jinja2
 import toml
 import yaml
-from setup_to_pyproject import migrate as migrate_setup_py_to_pyproject
 
 from detravisify import migrate_travis_to_gha
+from setup_to_pyproject import migrate as migrate_setup_py_to_pyproject
 
 logger = logging.getLogger(__name__)
 
