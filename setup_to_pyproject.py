@@ -137,7 +137,7 @@ def convert_to_pyproject_toml(
     import_name = project["name"].replace("-", "_")
 
     # find_packages() replacement:
-    tool["setuptools"]["packages"]["find"]["include"] = [import_name]
+    tool["setuptools"]["packages"]["find"]["include"] = [import_name + '*']
 
     # Throw away:
     # packages
