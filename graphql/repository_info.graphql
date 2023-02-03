@@ -1,0 +1,85 @@
+# Ref: https://graphql.org/learn/queries/
+# Ref: https://docs.github.com/en/graphql/reference/queries
+
+fragment repositoryInfo on RepositoryInfo {
+  description
+  homepageUrl
+  name
+  nameWithOwner
+  isArchived
+  ... on Node {
+    id
+  }
+}
+
+fragment deploymentProtectionRule on DeploymentProtectionRule
+{
+  timeout
+  reviewers(first:100) {
+    nodes {
+      ... on Team {
+        combinedSlug
+      }
+      ... on User {
+        login
+        name
+      }
+    }
+  }
+}
+
+query showRepositoryInfo($owner:String!, $repo:String!) {
+  repository(name: $repo, owner: $owner) {
+    environments(first: 10) {
+      nodes {
+        id
+        name
+        protectionRules(first: 100) {
+          nodes {
+            ...deploymentProtectionRule
+          }
+        }
+      }
+    }
+    ...repositoryInfo
+  }
+}
+
+fragment repositoryPaging on RepositoryConnection {
+  pageInfo {
+    hasNextPage
+    endCursor
+  }
+  totalCount
+}
+
+query listAllReposInOrg($orgLogin: String!, $endCursor: String) {
+  organization(login: $orgLogin) {
+    repositories(first: 100, after: $endCursor) {
+      nodes {
+        ...repositoryInfo
+      }
+      ...repositoryPaging
+    }
+  }
+}
+
+mutation createEnvironment(
+    $repositoryId:ID!,
+    $name:String!,
+) {
+  createEnvironment(input: {
+    name: $name
+    repositoryId: $repositoryId
+  }) {
+    environment {
+      id
+      name
+      protectionRules(first: 100) {
+        nodes {
+          ...deploymentProtectionRule
+        }
+      }
+    }
+  }
+}

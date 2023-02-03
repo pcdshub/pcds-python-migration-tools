@@ -1,0 +1,79 @@
+# Ref: https://graphql.org/learn/queries/
+# Ref: https://gist.github.com/duboisf/68fb6e22ac0a2165ca298074f0e3b553
+
+fragment actor on Actor {
+  login
+}
+
+
+fragment branchProtection on BranchProtectionRule {
+  allowsDeletions
+  allowsForcePushes
+  creator {
+    ...actor
+  }
+  id
+  isAdminEnforced
+  requiredStatusCheckContexts
+  requiredApprovingReviewCount
+  requiresApprovingReviews
+  requiresCodeOwnerReviews
+  requiresStatusChecks
+  restrictsPushes
+  restrictsReviewDismissals
+  dismissesStaleReviews
+  pattern
+}
+
+query showBranchProtection($owner:String!, $repo:String!) {
+  repository(name: $repo, owner: $owner) {
+    id
+    name
+    branchProtectionRules(first: 10) {
+      totalCount
+      nodes {
+        ...branchProtection
+      }
+    }
+  }
+}
+
+mutation addBranchProtection(
+    $repositoryId:ID!,
+    $branchPattern:String!,
+    $requiredStatusChecks:[String!],
+    $allowsDeletions:Boolean!,
+    $allowsForcePushes:Boolean!,
+    $dismissesStaleReviews:Boolean!,
+    $isAdminEnforced:Boolean!,
+    $requiresApprovingReviews:Boolean!,
+    $requiredApprovingReviewCount:Int!,
+    $requiresCodeOwnerReviews:Boolean!,
+    $requiresStatusChecks:Boolean!,
+    $restrictsReviewDismissals:Boolean!,
+) {
+  createBranchProtectionRule(input: {
+    allowsDeletions: $allowsDeletions
+    allowsForcePushes: $allowsForcePushes
+    dismissesStaleReviews: $dismissesStaleReviews
+    isAdminEnforced: $isAdminEnforced
+    pattern: $branchPattern
+    repositoryId: $repositoryId
+    requiresApprovingReviews: $requiresApprovingReviews
+    requiredApprovingReviewCount: $requiredApprovingReviewCount
+    requiresCodeOwnerReviews: $requiresCodeOwnerReviews
+    requiredStatusCheckContexts:$requiredStatusChecks
+    requiresStatusChecks: $requiresStatusChecks
+    restrictsReviewDismissals: $restrictsReviewDismissals
+  }) {
+    branchProtectionRule {
+      ...branchProtection
+    }
+  }
+}
+
+mutation deleteBranchProtection($ruleId:ID!) {
+  deleteBranchProtectionRule(input:{branchProtectionRuleId:$ruleId}) {
+    clientMutationId
+  }
+}
