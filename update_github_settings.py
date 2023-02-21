@@ -5,6 +5,7 @@ import collections
 import dataclasses
 import functools
 import json
+import logging
 import pathlib
 import subprocess
 from dataclasses import field
@@ -15,6 +16,8 @@ from apischema.metadata import alias
 
 script_path = pathlib.Path(__file__).resolve().parent
 
+
+logger = logging.getLogger(__name__)
 
 default_required_status_checks = {
     "python": [
@@ -144,10 +147,22 @@ def gh_graphql_describe(type_: str):
 ''')
 
 
+class DeserializationError(Exception):
+    def __init__(self, message: str, info: dict[str, Any]):
+        super().__init__(message)
+        self.info = info
+
+
 class Serializable:
     @classmethod
     def from_dict(cls, info: dict[str, Any]):
-        return apischema.deserialize(cls, info)
+        try:
+            return apischema.deserialize(cls, info)
+        except Exception as ex:
+            raise DeserializationError(
+                f"Failed to deserialize JSON dictionary for {cls.__name__}",
+                info
+            ) from ex
 
 
 @dataclasses.dataclass
@@ -175,7 +190,7 @@ class BranchProtection(Serializable):
         default_factory=default_required_status_checks["python"].copy,
         metadata=alias("requiredStatusCheckContexts"),
     )
-    required_approving_review_count: int = field(
+    required_approving_review_count: Optional[int] = field(
         default=1, metadata=alias("requiredApprovingReviewCount")
     )
     requires_approving_reviews: bool = field(
