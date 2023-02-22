@@ -350,7 +350,7 @@ class UpdateCondaRecipe(NestedFix):
         requirements_and_after = existing[existing.index("requirements:"):]
 
         conf = yaml.load("\n".join(requirements_and_after), Loader=yaml.Loader)
-        build_deps = conf["requirements"]["build"]
+        build_deps = conf["requirements"].get("build") or []
         for dep in self.remove_build_deps:
             while dep in build_deps:
                 build_deps.remove(dep)
@@ -721,6 +721,24 @@ class RunPycln(Fix):
 
 
 @dataclasses.dataclass(repr=False)
+class PrecommitAutoupdate(Fix):
+    arguments: list[str] = dataclasses.field(
+        default_factory=list
+    )
+
+    @property
+    def commit_message(self) -> str:
+        return "DEV: 'pre-commit autoupdate'"
+
+    @property
+    def description(self) -> str:
+        return "Running pre-commit autoupdate"
+
+    def run(self):
+        self.repo.run_command(["pre-commit", "autoupdate", *self.arguments])
+
+
+@dataclasses.dataclass(repr=False)
 class RunPrecommit(Fix):
     files: list[pathlib.Path] = dataclasses.field(default_factory=list)
     arguments: list[str] = dataclasses.field(
@@ -862,19 +880,16 @@ def get_fixes(repo: Repository) -> list[Fix]:
             SetuptoolsScmMigration(name=Fixes.setuptools_scm, repo=repo)
         )
 
-    fixes.append(
-        UpdateCondaRecipe(
-            name="update_conda_recipe",
-            repo=repo,
-        )
-    )
-
-    fixes.append(
-        RunPycln(name="run_pycln", repo=repo)
-    )
-
-    fixes.append(
-        RunPrecommit(name="run_precommit", repo=repo)
+    fixes.extend(
+        [
+            UpdateCondaRecipe(
+                name="update_conda_recipe",
+                repo=repo,
+            ),
+            RunPycln(name="run_pycln", repo=repo),
+            PrecommitAutoupdate(name="run_precommit", repo=repo),
+            RunPrecommit(name="run_precommit", repo=repo),
+        ]
     )
 
     return fixes
