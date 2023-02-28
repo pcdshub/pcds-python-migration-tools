@@ -71,6 +71,16 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
             update_if_existing=False,
         ),
         TemplateFile(
+            template_root=twincat_template_project_root,
+            template_file=".gitignore",
+            update_if_existing=False,
+        ),
+        TemplateFile(
+            template_root=twincat_template_project_root,
+            template_file=".gitattributes",
+            update_if_existing=False,
+        ),
+        TemplateFile(
             template_root=bundled_templates_root,
             template_file="README.md",
             update_if_existing=False,
