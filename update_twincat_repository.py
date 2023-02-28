@@ -19,16 +19,15 @@ bundled_templates_root = script_path / "templates" / "twincat"
 
 @dataclasses.dataclass
 class TemplateFile:
+    #: The file we want to add to the repository
     template_file: pathlib.Path
-    possible_files: list[Union[str, pathlib.Path]] = dataclasses.field(
-        default_factory=list
-    )
+    #: Possible locations where the file may be in the repository.
+    #: The first will be used as a default if it's not found.
+    possible_files: list[Union[str, pathlib.Path]]
+    #: If missing in the repository, add it from the template
     add_if_missing: bool = True
+    #: If existing in the repository, replace it with that of the template
     update_if_existing: bool = True
-
-    def __post_init__(self):
-        if not self.possible_files:
-            self.possible_files = [self.template_file]
 
 
 def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
@@ -51,29 +50,43 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
         TemplateFile(
             template_file=twincat_template_project_root / "LICENSE",
             possible_files=["LICENSE", "LICENSE.md", "LICENSE.rst"],
+            add_if_missing=True,
+            update_if_existing=True,
         ),
         TemplateFile(
             template_file=twincat_template_project_root / ".github" / "ISSUE_TEMPLATE.md",
+            possible_files=[".github/ISSUE_TEMPLATE.md"],
+            add_if_missing=True,
             update_if_existing=False,
         ),
         TemplateFile(
             template_file=twincat_template_project_root / ".github" / "PULL_REQUEST_TEMPLATE.md",
+            possible_files=[".github/PULL_REQUEST_TEMPLATE.md"],
+            add_if_missing=True,
             update_if_existing=False,
         ),
         TemplateFile(
             template_file=twincat_template_project_root / ".pre-commit-config.yaml",
+            possible_files=[".pre-commit-config.yaml"],
+            add_if_missing=True,
             update_if_existing=False,
         ),
         TemplateFile(
             template_file=twincat_template_project_root / ".gitignore",
+            possible_files=[".gitignore"],
+            add_if_missing=True,
             update_if_existing=False,
         ),
         TemplateFile(
             template_file=twincat_template_project_root / ".gitattributes",
+            possible_files=[".gitattributes"],
+            add_if_missing=True,
             update_if_existing=False,
         ),
         TemplateFile(
             template_file=bundled_templates_root / "README.md",
+            possible_files=["README.md"],
+            add_if_missing=True,
             update_if_existing=False,
         ),
     ]
@@ -91,7 +104,8 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
         to_update.append(
             TemplateFile(
                 template_file=twincat_template_project_root / ".github" / "workflows" / "standard.yml",
-                update_if_existing=False,
+                possible_files=[".github/workflows/standard.yml"],
+                update_if_existing=True,
                 add_if_missing=True,
             )
         )
@@ -99,13 +113,13 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
     for file in to_update:
         for dest_file in file.possible_files:
             if (repo.root / dest_file).exists():
+                dest_file = repo.root / dest_file
                 break
         else:
-            if not file.add_if_missing:
-                continue
-            dest_file = file.template_file
+            dest_file = repo.root / file.possible_files[0]
 
-        dest_file = repo.root / dest_file
+        assert file.template_file.exists()
+
         if dest_file.exists() and not file.update_if_existing:
             continue
 
