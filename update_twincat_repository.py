@@ -66,6 +66,11 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
             update_if_existing=False,
         ),
         TemplateFile(
+            template_root=twincat_template_project_root,
+            template_file=".pre-commit-config.yaml",
+            update_if_existing=False,
+        ),
+        TemplateFile(
             template_root=bundled_templates_root,
             template_file="README.md",
             update_if_existing=False,
@@ -113,9 +118,19 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
             )
         )
 
+    remove_docs_tokens = helpers.DeleteFiles(
+        name="remove_docs_tokens",
+        repo=repo,
+        files=list(repo.root.glob("*.enc")),
+    )
+
+    if remove_docs_tokens.files:
+        fixes.append(remove_docs_tokens)
+
     fixes.extend(
         [
             helpers.PrecommitAutoupdate(name="run_precommit", repo=repo),
+            # NOTE: don't run pre-commit; users will rebel
             # RunPrecommit(name="run_precommit", repo=repo),
         ]
     )
