@@ -1,3 +1,6 @@
 [submodule "cookiecutter-pcds-python"]
 	path = cookiecutter-pcds-python
 	url = https://github.com/pcdshub/cookiecutter-pcds-python
+[submodule "lcls-twincat-template-project"]
+	path = lcls-twincat-template-project
+	url = https://github.com/pcdshub/lcls-twincat-template-project
