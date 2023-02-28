@@ -99,6 +99,7 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
     elif not gha.exists():
         to_update.append(
             TemplateFile(
+                template_root=twincat_template_project_root,
                 template_file=pathlib.Path(".github") / "workflows" / "standard.yml",
                 update_if_existing=False,
                 add_if_missing=True,
