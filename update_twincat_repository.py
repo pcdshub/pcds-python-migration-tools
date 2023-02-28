@@ -6,7 +6,6 @@ import argparse
 import dataclasses
 import logging
 import pathlib
-import textwrap
 from typing import Optional, Union
 
 import update_python_repository as helpers
@@ -20,8 +19,7 @@ bundled_templates_root = script_path / "templates" / "twincat"
 
 @dataclasses.dataclass
 class TemplateFile:
-    template_root: pathlib.Path
-    template_file: Union[str, pathlib.Path]
+    template_file: pathlib.Path
     possible_files: list[Union[str, pathlib.Path]] = dataclasses.field(
         default_factory=list
     )
@@ -35,7 +33,7 @@ class TemplateFile:
 
 def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
     """
-    Update a repository to the latest standards.
+    Update a TwinCAT repository to the latest standards.
     """
     if not (repo.root / ".git").exists():
         raise RuntimeError("Not a repository root?")
@@ -51,38 +49,31 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
 
     to_update = [
         TemplateFile(
-            template_root=twincat_template_project_root,
-            template_file="LICENSE",
+            template_file=twincat_template_project_root / "LICENSE",
             possible_files=["LICENSE", "LICENSE.md", "LICENSE.rst"],
         ),
         TemplateFile(
-            template_root=twincat_template_project_root,
-            template_file=pathlib.Path(".github") / "ISSUE_TEMPLATE.md",
+            template_file=twincat_template_project_root / ".github" / "ISSUE_TEMPLATE.md",
             update_if_existing=False,
         ),
         TemplateFile(
-            template_root=twincat_template_project_root,
-            template_file=pathlib.Path(".github") / "PULL_REQUEST_TEMPLATE.md",
+            template_file=twincat_template_project_root / ".github" / "PULL_REQUEST_TEMPLATE.md",
             update_if_existing=False,
         ),
         TemplateFile(
-            template_root=twincat_template_project_root,
-            template_file=".pre-commit-config.yaml",
+            template_file=twincat_template_project_root / ".pre-commit-config.yaml",
             update_if_existing=False,
         ),
         TemplateFile(
-            template_root=twincat_template_project_root,
-            template_file=".gitignore",
+            template_file=twincat_template_project_root / ".gitignore",
             update_if_existing=False,
         ),
         TemplateFile(
-            template_root=twincat_template_project_root,
-            template_file=".gitattributes",
+            template_file=twincat_template_project_root / ".gitattributes",
             update_if_existing=False,
         ),
         TemplateFile(
-            template_root=bundled_templates_root,
-            template_file="README.md",
+            template_file=bundled_templates_root / "README.md",
             update_if_existing=False,
         ),
     ]
@@ -99,8 +90,7 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
     elif not gha.exists():
         to_update.append(
             TemplateFile(
-                template_root=twincat_template_project_root,
-                template_file=pathlib.Path(".github") / "workflows" / "standard.yml",
+                template_file=twincat_template_project_root / ".github" / "workflows" / "standard.yml",
                 update_if_existing=False,
                 add_if_missing=True,
             )
@@ -121,11 +111,11 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
 
         fixes.append(
             helpers.AddFileFromTemplate(
-                f"add_{file.template_file}",
-                template_file=pathlib.Path(file.template_file),
+                f"add_{file.template_file.name}",
+                template_file=pathlib.Path(file.template_file.parts[-1]),
                 dest_file=dest_file,
                 repo=repo,
-                source_base_path=file.template_root,
+                source_base_path=file.template_file.parent,
             )
         )
 
@@ -149,62 +139,6 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
     return fixes
 
 
-def run_fixes(
-    fixes: list[helpers.Fix],
-    dry_run: bool = True,
-    skip: Optional[list[str]] = None,
-    only: Optional[list[str]] = None,
-):
-    skip = skip or []
-    only = only or []
-    for fix in fixes:
-        if fix.name in skip:
-            print(f"({fix.name} skipped)")
-            print()
-            continue
-
-        desc = textwrap.indent(str(fix), prefix="    ")
-        print(f"{desc.lstrip()}")
-        print()
-
-    if dry_run:
-        return
-
-    print("\n" * 5)
-    print("** Running fixes...")
-    for fix in fixes:
-        if only and fix.name not in only:
-            continue
-        if fix.name in skip:
-            continue
-
-        desc = textwrap.indent(str(fix), prefix="    ")
-        print(f"{desc.lstrip()}")
-
-        try:
-            fix.run()
-        except Exception:
-            logger.error("Failed to run fix: %s", str(fix), exc_info=True)
-            logger.error("Continue? [Y/n]")
-            if input().lower() not in ("", "y", "yes"):
-                break
-
-        if not fix.commit_message:
-            continue
-
-        commit = helpers.start_commit(fix)
-        if commit is None:
-            continue
-
-        try:
-            commit.run()
-        except Exception:
-            logger.error(f"Failed to commit changes:\n{commit.message}")
-            logger.error("Continue? [Y/n]")
-            if input().lower() not in ("", "y", "yes"):
-                break
-
-
 def main(
     repo_root: str,
     dry_run: bool = True,
@@ -221,7 +155,7 @@ def main(
 
     # repo.template_defaults["cookiecutter"].import_name = repo.import_name
     fixes = get_fixes(repo)
-    return run_fixes(fixes, dry_run=dry_run, skip=skip, only=only)
+    return helpers.run_fixes(fixes, dry_run=dry_run, skip=skip, only=only)
 
 
 def _create_argparser() -> argparse.ArgumentParser:
