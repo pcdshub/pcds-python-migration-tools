@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import dataclasses
+import enum
 import logging
 import pathlib
 from typing import Optional, Union
@@ -15,6 +16,16 @@ logger = logging.getLogger(__name__)
 script_path = pathlib.Path(__file__).parent.resolve()
 twincat_template_project_root = script_path / "lcls-twincat-template-project"
 bundled_templates_root = script_path / "templates" / "twincat"
+
+
+class ProjectType(str, enum.Enum):
+    library = "library"
+    plc = "plc"
+
+    def __str__(self) -> str:
+        return self.value
+
+    __repr__ = __str__
 
 
 @dataclasses.dataclass
@@ -29,8 +40,16 @@ class TemplateFile:
     #: If existing in the repository, replace it with that of the template
     update_if_existing: bool = True
 
+    @property
+    def default_dest_file(self) -> pathlib.Path:
+        """Default file to write if not already existing."""
+        return pathlib.Path(self.possible_files[0])
 
-def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
+
+def get_fixes(
+    repo: helpers.Repository,
+    project_type: ProjectType,
+) -> list[helpers.Fix]:
     """
     Update a TwinCAT repository to the latest standards.
     """
@@ -46,6 +65,14 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
                 helpers.DeleteFiles(name=f"remove-{file.name}", repo=repo, files=[file])
             )
 
+    issue_template = twincat_template_project_root / ".github" / "ISSUE_TEMPLATE.md"
+    if project_type == ProjectType.library:
+        pr_template = bundled_templates_root / "library_pr_template.md"
+    elif project_type == ProjectType.plc:
+        pr_template = twincat_template_project_root / ".github" / "PULL_REQUEST_TEMPLATE.md"
+    else:
+        raise ValueError(f"Unknown project type: {project_type}")
+
     to_update = [
         TemplateFile(
             template_file=twincat_template_project_root / "LICENSE",
@@ -54,13 +81,13 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
             update_if_existing=True,
         ),
         TemplateFile(
-            template_file=twincat_template_project_root / ".github" / "ISSUE_TEMPLATE.md",
+            template_file=issue_template,
             possible_files=[".github/ISSUE_TEMPLATE.md"],
             add_if_missing=True,
             update_if_existing=False,
         ),
         TemplateFile(
-            template_file=twincat_template_project_root / ".github" / "PULL_REQUEST_TEMPLATE.md",
+            template_file=pr_template,
             possible_files=[".github/PULL_REQUEST_TEMPLATE.md"],
             add_if_missing=True,
             update_if_existing=False,
@@ -116,7 +143,7 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
                 dest_file = repo.root / dest_file
                 break
         else:
-            dest_file = repo.root / file.possible_files[0]
+            dest_file = repo.root / file.default_dest_file
 
         assert file.template_file.exists()
 
@@ -155,6 +182,7 @@ def get_fixes(repo: helpers.Repository) -> list[helpers.Fix]:
 
 def main(
     repo_root: str,
+    project_type: str = "plc",
     dry_run: bool = True,
     skip: Optional[list[str]] = None,
     only: Optional[list[str]] = None,
@@ -168,7 +196,8 @@ def main(
     )
 
     # repo.template_defaults["cookiecutter"].import_name = repo.import_name
-    fixes = get_fixes(repo)
+    project_type = ProjectType[project_type]
+    fixes = get_fixes(repo, project_type=project_type)
     return helpers.run_fixes(fixes, dry_run=dry_run, skip=skip, only=only)
 
 
@@ -182,6 +211,7 @@ def _create_argparser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser()
     parser.add_argument("repo_root", type=str)
+    parser.add_argument("--project-type", choices=("library", "plc"), default="plc")
     parser.add_argument("--write", action="store_false", dest="dry_run")
     parser.add_argument("--skip", type=str, action="append")
     parser.add_argument("--only", type=str, action="append")
