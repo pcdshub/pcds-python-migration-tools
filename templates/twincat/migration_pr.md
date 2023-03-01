@@ -4,11 +4,12 @@ See the diff for the full list of changes.
 
 * Enables GitHub Actions continuous integration for this repository
 * Adds/updates SLAC ``LICENSE``.
-* If not already in the repository, this tool will add files from the standard template:
+* Removes documentation deployment Travis CI key(s).
+* Updates pre-commit configuration.
+* Adds files from the standard template, if not already in this repository:
     - ``.gitignore``
     - ``.gitattributes``
     - ``.pre-commit-config.yaml``
     - ``README.md``
     - Issue template
     - Pull request template
-* Pre-commit configuration will be updated to the latest versions.

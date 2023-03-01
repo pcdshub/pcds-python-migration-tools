@@ -43,7 +43,7 @@ python "$SCRIPT_DIR/update_twincat_repository.py" --project-type="$PROJECT_TYPE"
 
 while true; do
   git diff origin/master
-  read -p "Ready to push and open PR? [y]/n) " yn
+  read -rp "Ready to push and open PR? [y]/n " yn
 
   if [[ -z "$yn" || "$yn" == "y" ]]; then
     break
@@ -57,9 +57,11 @@ done
 git commit -am "MNT: finish up migration" || echo "No changes"
 
 git remote -v
-git push -u -v --force-with-lease "$USER" "${BRANCH_NAME}"
+git push -u -v --force "$USER" "${BRANCH_NAME}"
 gh pr create \
   --title "CI: Migrate to GitHub Actions" \
   --body-file "$SCRIPT_DIR/templates/twincat/migration_pr.md" \
   --base master \
-  --repo "$REPO"
+  --repo "$REPO" \
+  --reviewer zllentz \
+  --reviewer tangkong
