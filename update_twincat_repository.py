@@ -57,13 +57,6 @@ def get_fixes(
         raise RuntimeError("Not a repository root?")
 
     fixes = []
-    to_remove = [
-    ]
-    for file in to_remove:
-        if file.exists():
-            fixes.append(
-                helpers.DeleteFiles(name=f"remove-{file.name}", repo=repo, files=[file])
-            )
 
     issue_template = twincat_template_project_root / ".github" / "ISSUE_TEMPLATE.md"
     if project_type == ProjectType.library:
