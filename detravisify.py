@@ -5,12 +5,15 @@ Travis configuration to a standalone script
 from __future__ import annotations
 
 import argparse
+import pathlib
 import string
 from dataclasses import dataclass, field
 from typing import Any, Optional, Union
 
 import apischema
 import yaml
+
+SCRIPT_DIR = pathlib.Path(__file__).resolve().parent
 
 
 class Script(str):
@@ -309,7 +312,7 @@ def travis_yaml_to_pcds_python_gha(contents: str, template: str = "") -> str:
     str
     """
     if not template:
-        template = "python_gha_template.yml"
+        template = str(SCRIPT_DIR / "python_gha_template.yml")
 
     conf = yaml.load(contents, Loader=yaml.Loader)
     env = env_to_dict(apischema.deserialize(Environment, conf.get("env", {})).global_)
@@ -357,7 +360,7 @@ def travis_yaml_to_pcds_twincat_gha(contents: str, template: str = "") -> str:
     str
     """
     if not template:
-        template = "twincat_gha_template.yml"
+        template = str(SCRIPT_DIR / "twincat_gha_template.yml")
 
     conf = yaml.load(contents, Loader=yaml.Loader)
     env = env_to_dict(apischema.deserialize(Environment, conf.get("env", {})).global_)
