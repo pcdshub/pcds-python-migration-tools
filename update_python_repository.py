@@ -778,8 +778,8 @@ def get_repo_name(root: pathlib.Path) -> str:
 def get_template_defaults(root: pathlib.Path) -> dict[str, Any]:
     cookiecutter = CookiecutterSettings()
     cookiecutter.project_name = get_repo_name(root)
-    cookiecutter.repo_name = cookiecutter.project_name.replace("-", "_")
-    cookiecutter.import_name = cookiecutter.repo_name
+    cookiecutter.repo_name = cookiecutter.project_name
+    cookiecutter.import_name = cookiecutter.repo_name.replace("-", "_")
     return {
         "cookiecutter": cookiecutter,
     }
