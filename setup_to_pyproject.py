@@ -62,9 +62,9 @@ def pick_file(
     option = find_file_by_options(path, options)
     if option is not None:
         dest[key] = option.name
-    else:
-        dest.pop(key)
-    return option.name
+        return option.name
+    dest.pop(key)
+    return None
 
 
 def set_if_available(
