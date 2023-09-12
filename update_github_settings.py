@@ -203,6 +203,7 @@ class BranchProtection(Serializable):
         default=True, metadata=alias("requiresStatusChecks")
     )
     restricts_pushes: bool = field(default=True, metadata=alias("restrictsPushes"))
+    blocks_creations: bool = field(default=True, metadata=alias("blocksCreations"))
     restricts_review_dismissals: bool = field(
         default=False, metadata=alias("restrictsReviewDismissals")
     )
@@ -219,12 +220,14 @@ class BranchProtection(Serializable):
             requiredStatusChecks=self.required_status_checks,
             allowsDeletions=self.allows_deletions,
             allowsForcePushes=self.allows_force_pushes,
+            blocksCreations=self.blocks_creations,
             dismissesStaleReviews=self.dismisses_stale_reviews,
             isAdminEnforced=self.is_admin_enforced,
             requiresApprovingReviews=self.requires_approving_reviews,
             requiredApprovingReviewCount=self.required_approving_review_count,
             requiresCodeOwnerReviews=self.requires_code_owner_reviews,
             requiresStatusChecks=self.requires_status_checks,
+            restrictsPushes=self.restricts_pushes,
             restrictsReviewDismissals=self.restricts_review_dismissals,
             branchPattern=self.pattern,
         )
@@ -358,6 +361,7 @@ def main(
     owner: str,
     repo_name: str = "",
     repo_type: str = "python",
+    write: bool = False,
     list_repos: bool = False,
     create_environments: bool = True,
     update_branch_protection: bool = True,
@@ -374,26 +378,47 @@ def main(
         return
 
     repo = Repository.from_name(owner=owner, repo=repo_name)
-
     if create_environments:
         print("Creating environment gh-pages")
-        repo.create_environment("gh-pages")
+        if write:
+            repo.create_environment("gh-pages")
 
     if update_branch_protection:
         print("Repository:", repo)
         for prot in BranchProtection.from_repository(repo):
-            print("Deleting branch protection setting")
-            prot.delete()
-        prot = BranchProtection()
-        prot.required_status_checks = default_required_status_checks[repo_type]
-        new_rule = prot.create(repo)
-        print("Created rule")
-        print(new_rule)
+            if write:
+                print("Deleting branch protection setting")
+                prot.delete()
+            else:
+                print("(dry run) Deleting branch protection setting")
+        master_prot = BranchProtection()
+        master_prot.required_status_checks = default_required_status_checks[repo_type]
+
+        gh_pages_prot = BranchProtection(pattern='gh-pages', allows_force_pushes=True,
+                                         required_status_checks=[],
+                                         requires_status_checks=False,
+                                         required_approving_review_count=0,
+                                         requires_approving_reviews=False,
+                                         )
+        all_prot = BranchProtection(pattern='*', required_status_checks=[],
+                                    requires_status_checks=False,
+                                    required_approving_review_count=0,
+                                    requires_approving_reviews=False,
+                                    allows_deletions=True,)
+        prot_rules = [master_prot, gh_pages_prot, all_prot]
+        if write:
+            for prot in prot_rules:
+                new_rule = prot.create(repo)
+                print("Created rule")
+                print(new_rule)
+        else:
+            print("(dry run) Created rule")
+            print(prot_rules)
 
 
 def _create_argparser() -> argparse.ArgumentParser:
     """
-    Create an ArgumentParser for detravisify.
+    Create an ArgumentParser for update_github_settings.
 
     Returns
     -------
@@ -408,6 +433,9 @@ def _create_argparser() -> argparse.ArgumentParser:
         type=str,
         default="python",
         choices=sorted(default_required_status_checks),
+    )
+    parser.add_argument(
+        "--write", action="store_true", dest="write"
     )
     parser.add_argument(
         "--no-branch-protection", action="store_false", dest="update_branch_protection"

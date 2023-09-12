@@ -44,17 +44,20 @@ mutation addBranchProtection(
     $requiredStatusChecks:[String!],
     $allowsDeletions:Boolean!,
     $allowsForcePushes:Boolean!,
+    $blocksCreations:Boolean!,
     $dismissesStaleReviews:Boolean!,
     $isAdminEnforced:Boolean!,
     $requiresApprovingReviews:Boolean!,
     $requiredApprovingReviewCount:Int!,
     $requiresCodeOwnerReviews:Boolean!,
     $requiresStatusChecks:Boolean!,
+    $restrictsPushes:Boolean!,
     $restrictsReviewDismissals:Boolean!,
 ) {
   createBranchProtectionRule(input: {
     allowsDeletions: $allowsDeletions
     allowsForcePushes: $allowsForcePushes
+    blocksCreations: $blocksCreations
     dismissesStaleReviews: $dismissesStaleReviews
     isAdminEnforced: $isAdminEnforced
     pattern: $branchPattern
@@ -64,6 +67,7 @@ mutation addBranchProtection(
     requiresCodeOwnerReviews: $requiresCodeOwnerReviews
     requiredStatusCheckContexts:$requiredStatusChecks
     requiresStatusChecks: $requiresStatusChecks
+    restrictsPushes: $restrictsPushes
     restrictsReviewDismissals: $restrictsReviewDismissals
   }) {
     branchProtectionRule {
