@@ -208,7 +208,7 @@ class BranchProtection(Serializable):
         default=False, metadata=alias("restrictsReviewDismissals")
     )
     dismisses_stale_reviews: bool = field(
-        default=False, metadata=alias("dismissesStaleReviews")
+        default=True, metadata=alias("dismissesStaleReviews")
     )
     pattern: str = field(default="master")
 
@@ -395,12 +395,14 @@ def main(
         master_prot.required_status_checks = default_required_status_checks[repo_type]
 
         gh_pages_prot = BranchProtection(pattern='gh-pages', allows_force_pushes=True,
+                                         dismisses_stale_reviews=False,
                                          required_status_checks=[],
                                          requires_status_checks=False,
                                          required_approving_review_count=0,
                                          requires_approving_reviews=False,
                                          )
         all_prot = BranchProtection(pattern='*', required_status_checks=[],
+                                    dismisses_stale_reviews=False,
                                     requires_status_checks=False,
                                     required_approving_review_count=0,
                                     requires_approving_reviews=False,
