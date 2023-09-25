@@ -75,10 +75,11 @@ class ProtectionGroup:
             **flags
         )
 
-    def apply_protections(
-        self,
-        write: bool
-    ) -> None:
+    def apply_protections(self, write: bool) -> None:
+        """
+        Create a ``Repository``, delete its existing branch protections, and
+        create new branch protection settings
+        """
         repo = Repository.from_name(owner=self.owner, repo=self.repo_name)
 
         for prot in BranchProtection.from_repository(repo):
@@ -111,6 +112,27 @@ class ProtectionGroup:
 
 
 def parse_repo_list(repo_data_path: str) -> List[ProtectionGroup]:
+    """
+    Read and parse a repository data list from ``repo_data_path``
+    Expects a basic csv format (comma-delimited, first row are column headers)
+    Expects the following header names
+    - 'owner': repository owner, organization
+    - 'repo_name': repository name
+    - 'repo_type': one of
+      - {0}
+    And a bool-type (y, yes, true) for each of the protection rule types:
+    - {1}
+
+    Parameters
+    ----------
+    repo_data_path : str
+        path to the repo-data csv
+
+    Returns
+    -------
+    List[ProtectionGroup]
+        A list of ProtectionGroup's, holding settings for protection groups
+    """
     data_path = Path(repo_data_path)
     if not data_path.exists:
         print('repo data file does not exist')
@@ -123,6 +145,13 @@ def parse_repo_list(repo_data_path: str) -> List[ProtectionGroup]:
             data_row = ProtectionGroup.from_dict(row)
             repo_data.append(data_row)
     return repo_data
+
+
+# This could be a decorator, but we only do this once here
+parse_repo_list.__doc__ = parse_repo_list.__doc__.format(
+    '\n      - '.join(list(ProtectionGroup.CHECK_NAME_MAP.keys())),
+    '\n    - '.join(ProtectionGroup.RULE_MAP.keys())
+)
 
 
 def main(
@@ -165,18 +194,30 @@ def _create_argparser() -> argparse.ArgumentParser:
     """
     parser = argparse.ArgumentParser()
     # specify an owner, repo, and settings
-    parser.add_argument("owner", type=str, default='pcdshub', nargs='?')
-    parser.add_argument("repo_name", type=str, default='', nargs='?')
-    parser.add_argument("repo_type", type=str, default='Other', nargs='?')
-    parser.add_argument("--protect-master", action="store_true", dest='prot_master')
-    parser.add_argument("--protect-pages", action="store_true", dest='prot_pages')
-    parser.add_argument("--protect-default", action="store_true", dest='prot_default')
+    parser.add_argument("owner", type=str, default='pcdshub', nargs='?',
+                        help='Organization or ownder of the repository, "pcdshub"'
+                             'by default')
+    parser.add_argument("repo_name", type=str, default='', nargs='?',
+                        help='Name of the repository')
+    parser.add_argument("repo_type", type=str, default='Other', nargs='?',
+                        help='Type of the repository.  Should be one of '
+                             f'{list(ProtectionGroup.CHECK_NAME_MAP.keys())}')
+    parser.add_argument("--protect-master", action="store_true", dest='prot_master',
+                        help="Add master protection.  This should be applied as "
+                             "much as possible. This rule requires pull requests and "
+                             "disallows force pushes. This protection also adds required "
+                             "status checks depending on the repo_type")
+    parser.add_argument("--protect-pages", action="store_true", dest='prot_pages',
+                        help="Add gh-pages branch protection, allowing force pushes "
+                             "to the gh-pages branch specifically")
+    parser.add_argument("--protect-default", action="store_true", dest='prot_default',
+                        help="Add default (*) branch protection, disallows "
+                             "the creation of new branches")
 
     # Optionally specify everything at once
     parser.add_argument("--repo-data-path", type=str, dest='repo_data_path',
                         help='Path to repo data csv.  Expects columns for: '
-                             '[orgname, reponame, apply_master, apply_pages, '
-                             'apply_default]')
+                             f'{[f.name for f in fields(ProtectionGroup)]}')
 
     parser.add_argument("--write", action="store_true", dest="write")
 
