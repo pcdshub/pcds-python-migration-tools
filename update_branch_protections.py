@@ -97,7 +97,7 @@ class ProtectionGroup:
                 if name == 'master':
                     protection_rule = BranchProtection()
                     # customize status checks based on repo type
-                    check_name = self.CHECK_NAME_MAP.get(name, 'none')
+                    check_name = self.CHECK_NAME_MAP.get(self.repo_type, 'none')
                     check_list = default_required_status_checks[check_name]
                     protection_rule.required_status_checks = check_list
                 else:
