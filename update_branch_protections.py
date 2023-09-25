@@ -65,7 +65,7 @@ class ProtectionGroup:
             flags = {f.name: str_to_bool(source[f.name]) for f in fields(cls)
                      if f.name not in ('owner', 'repo_name', 'repo_type')}
         except KeyError as e:
-            print("source data malformed, aborting")
+            print("source data malformed, aborting data=", source)
             raise e
 
         return cls(
@@ -195,7 +195,7 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser()
     # specify an owner, repo, and settings
     parser.add_argument("owner", type=str, default='pcdshub', nargs='?',
-                        help='Organization or ownder of the repository, "pcdshub"'
+                        help='Organization or owner of the repository, "pcdshub"'
                              'by default')
     parser.add_argument("repo_name", type=str, default='', nargs='?',
                         help='Name of the repository')
