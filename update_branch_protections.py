@@ -6,7 +6,8 @@ from dataclasses import dataclass, fields
 from pathlib import Path
 from typing import List
 
-from update_github_settings import BranchProtection, Repository
+from update_github_settings import (BranchProtection, Repository,
+                                    default_required_status_checks)
 
 master_protect = BranchProtection()
 gh_pages_prot = BranchProtection(pattern='gh-pages', allows_force_pushes=True,
@@ -32,6 +33,7 @@ def str_to_bool(val: str):
 class ProtectionGroup:
     owner: str
     repo_name: str
+    repo_type: str
     master: bool = False
     gh_pages: bool = False
     default: bool = False
@@ -43,11 +45,25 @@ class ProtectionGroup:
         'default': all_prot
     }
 
+    # map repo-types to status-check lists
+    CHECK_NAME_MAP = {
+        'Python Library': 'python',
+        'Python Dev': 'none',
+        'PLC': 'twincat',
+        'TwinCAT Library': 'twincat',
+        'Backup': 'none',
+        'Other': 'none',
+        'EPICS IOC': 'none',
+        'Exempt': 'none',
+        'External': 'none',
+        'EPICS module': 'none'
+    }
+
     @classmethod
     def from_dict(cls, source: dict):
         try:
             flags = {f.name: str_to_bool(source[f.name]) for f in fields(cls)
-                     if f.name not in ('owner', 'repo_name')}
+                     if f.name not in ('owner', 'repo_name', 'repo_type')}
         except KeyError as e:
             print("source data malformed, aborting")
             raise e
@@ -55,6 +71,7 @@ class ProtectionGroup:
         return cls(
             owner=source["owner"],
             repo_name=source["repo_name"],
+            repo_type=source["repo_type"],
             **flags
         )
 
@@ -72,13 +89,21 @@ class ProtectionGroup:
                 print("(dry run) Deleting branch protection setting")
 
         rule_names = (f.name for f in fields(self)
-                      if f.name not in ('owner', 'repo_name'))
+                      if f.name not in ('owner', 'repo_name', 'repo_type'))
 
         for name in rule_names:
             if getattr(self, name, False):
                 print(f'created {name} rule for repo: {self.repo_name}')
-                if write:
+                if name == 'master':
+                    protection_rule = BranchProtection()
+                    # customize status checks based on repo type
+                    check_name = self.CHECK_NAME_MAP.get(name, 'none')
+                    check_list = default_required_status_checks[check_name]
+                    protection_rule.required_status_checks = check_list
+                else:
                     protection_rule = self.RULE_MAP[name]
+
+                if write:
                     protection_rule.create(repo)
                     print(f'-- {name} rule applied')
                 else:
@@ -103,6 +128,7 @@ def parse_repo_list(repo_data_path: str) -> List[ProtectionGroup]:
 def main(
     owner: str = "pcdshub",
     repo_name: str = "",
+    repo_type: str = "Python Library",
     prot_master: bool = False,
     prot_pages: bool = False,
     prot_default: bool = False,
@@ -121,7 +147,8 @@ def main(
 
     # apply settings for a single repo
     protection_group = ProtectionGroup(
-        owner, repo_name, master=prot_master, gh_pages=prot_pages, default=prot_default
+        owner=owner, repo_name=repo_name, repo_type=repo_type,
+        master=prot_master, gh_pages=prot_pages, default=prot_default
     )
     protection_group.apply_protections(write=write)
 
@@ -140,6 +167,7 @@ def _create_argparser() -> argparse.ArgumentParser:
     # specify an owner, repo, and settings
     parser.add_argument("owner", type=str, default='pcdshub', nargs='?')
     parser.add_argument("repo_name", type=str, default='', nargs='?')
+    parser.add_argument("repo_type", type=str, default='Other', nargs='?')
     parser.add_argument("--protect-master", action="store_true", dest='prot_master')
     parser.add_argument("--protect-pages", action="store_true", dest='prot_pages')
     parser.add_argument("--protect-default", action="store_true", dest='prot_default')

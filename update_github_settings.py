@@ -39,6 +39,7 @@ default_required_status_checks = {
         # "standard / Syntax check / Experimental Syntax Check",
         # "standard / pre-commit checks / pre-commit",
     ],
+    "none": []
 }
 
 
