@@ -10,19 +10,24 @@ from update_github_settings import (BranchProtection, Repository,
                                     default_required_status_checks)
 
 master_protect = BranchProtection()
-gh_pages_prot = BranchProtection(pattern='gh-pages', allows_force_pushes=True,
-                                 dismisses_stale_reviews=False,
-                                 required_status_checks=[],
-                                 requires_status_checks=False,
-                                 required_approving_review_count=0,
-                                 requires_approving_reviews=False,
-                                 )
-all_prot = BranchProtection(pattern='*', required_status_checks=[],
-                            dismisses_stale_reviews=False,
-                            requires_status_checks=False,
-                            required_approving_review_count=0,
-                            requires_approving_reviews=False,
-                            allows_deletions=True,)
+gh_pages_prot = BranchProtection(
+    pattern='gh-pages',
+    allows_force_pushes=True,
+    dismisses_stale_reviews=False,
+    required_status_checks=[],
+    requires_status_checks=False,
+    required_approving_review_count=0,
+    requires_approving_reviews=False,
+)
+all_prot = BranchProtection(
+    pattern='*',
+    required_status_checks=[],
+    dismisses_stale_reviews=False,
+    requires_status_checks=False,
+    required_approving_review_count=0,
+    requires_approving_reviews=False,
+    allows_deletions=True
+)
 
 
 def str_to_bool(val: str):
@@ -77,8 +82,8 @@ class ProtectionGroup:
 
     def apply_protections(self, write: bool) -> None:
         """
-        Create a ``Repository``, delete its existing branch protections, and
-        create new branch protection settings
+        Create a ``Repository`` dataclass, coonnecting to the github repository.
+        Delete its existing branch protections and create new branch protections.
         """
         repo = Repository.from_name(owner=self.owner, repo=self.repo_name)
 
@@ -200,8 +205,8 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("repo_name", type=str, default='', nargs='?',
                         help='Name of the repository')
     parser.add_argument("repo_type", type=str, default='Other', nargs='?',
-                        help='Type of the repository.  Should be one of '
-                             f'{list(ProtectionGroup.CHECK_NAME_MAP.keys())}')
+                        choices=list(ProtectionGroup.CHECK_NAME_MAP.keys()),
+                        help='Type of the repository.')
     parser.add_argument("--protect-master", action="store_true", dest='prot_master',
                         help="Add master protection.  This should be applied as "
                              "much as possible. This rule requires pull requests and "
