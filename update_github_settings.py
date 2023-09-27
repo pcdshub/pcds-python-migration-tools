@@ -218,7 +218,7 @@ class BranchProtection(Serializable):
             get_packaged_graphql("branch_protection.graphql"),
             operationName="addBranchProtection",
             repositoryId=repo.id,
-            requiredStatusChecks=self.required_status_checks,
+            requiredStatusCheckContexts=self.required_status_checks,
             allowsDeletions=self.allows_deletions,
             allowsForcePushes=self.allows_force_pushes,
             blocksCreations=self.blocks_creations,

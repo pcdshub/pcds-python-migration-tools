@@ -41,7 +41,7 @@ query showBranchProtection($owner:String!, $repo:String!) {
 mutation addBranchProtection(
     $repositoryId:ID!,
     $branchPattern:String!,
-    $requiredStatusChecks:[String!],
+    $requiredStatusCheckContexts:[String!],
     $allowsDeletions:Boolean!,
     $allowsForcePushes:Boolean!,
     $blocksCreations:Boolean!,
@@ -65,7 +65,7 @@ mutation addBranchProtection(
     requiresApprovingReviews: $requiresApprovingReviews
     requiredApprovingReviewCount: $requiredApprovingReviewCount
     requiresCodeOwnerReviews: $requiresCodeOwnerReviews
-    requiredStatusCheckContexts:$requiredStatusChecks
+    requiredStatusCheckContexts:$requiredStatusCheckContexts
     requiresStatusChecks: $requiresStatusChecks
     restrictsPushes: $restrictsPushes
     restrictsReviewDismissals: $restrictsReviewDismissals
