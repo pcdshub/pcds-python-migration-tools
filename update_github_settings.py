@@ -203,8 +203,8 @@ class BranchProtection(Serializable):
     requires_status_checks: bool = field(
         default=True, metadata=alias("requiresStatusChecks")
     )
-    restricts_pushes: bool = field(default=True, metadata=alias("restrictsPushes"))
-    blocks_creations: bool = field(default=True, metadata=alias("blocksCreations"))
+    restricts_pushes: bool = field(default=False, metadata=alias("restrictsPushes"))
+    blocks_creations: bool = field(default=False, metadata=alias("blocksCreations"))
     restricts_review_dismissals: bool = field(
         default=False, metadata=alias("restrictsReviewDismissals")
     )
