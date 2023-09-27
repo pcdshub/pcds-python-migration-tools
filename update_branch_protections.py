@@ -18,6 +18,8 @@ gh_pages_prot = BranchProtection(
     requires_status_checks=False,
     required_approving_review_count=0,
     requires_approving_reviews=False,
+    restricts_pushes=False,
+    blocks_creations=False
 )
 all_prot = BranchProtection(
     pattern='*',
