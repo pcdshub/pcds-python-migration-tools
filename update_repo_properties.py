@@ -209,8 +209,7 @@ def _create_argparser() -> argparse.ArgumentParser:
                         dest='prot_master',
                         help="Add master protection.  This should be applied as "
                              "much as possible. This rule requires pull requests and "
-                             "disallows force pushes. This protection also adds required "
-                             "status checks depending on the repo_type")
+                             "disallows force pushes.")
     parser.add_argument("--protect-pages", action=argparse.BooleanOptionalAction,
                         dest='prot_pages',
                         help="Add gh-pages branch protection, allowing force pushes "
