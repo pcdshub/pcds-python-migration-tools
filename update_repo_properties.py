@@ -86,20 +86,24 @@ class RepoProperty:
                     val = str(val).lower()
                 elif isinstance(val, Enum):
                     val = val.value
+
                 prop_list.append({
                     'property_name': prop_name,
                     'value': val,
                 })
 
         if write:
+            print(f"Applying: {self.owner}/{self.repo_name}"
+                  f"{[(p['property_name']+'='+p['value']) for p in prop_list]}")
+
             api = get_gh_api()
-            print(f'Applying: {prop_list}')
             api.repos.create_or_update_custom_properties_values(
                 owner=self.owner, repo=self.repo_name,
                 properties=prop_list
             )
         else:
-            print(f'(dry run): {prop_list}')
+            print(f"(dry run): {self.owner}/{self.repo_name}"
+                  f"{[(p['property_name']+'='+p['value']) for p in prop_list]}")
 
     @classmethod
     def from_dict(cls, source: dict) -> RepoProperty:
