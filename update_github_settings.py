@@ -48,7 +48,7 @@ def get_packaged_graphql(filename: str) -> str:
     # Ref: https://graphql.org/learn/queries/
     # Ref: https://gist.github.com/duboisf/68fb6e22ac0a2165ca298074f0e3b553
 
-    with open(script_path / "graphql" / filename, "rt") as fp:
+    with open(script_path / "graphql_queries" / filename, "rt") as fp:
         return fp.read().strip()
 
 
