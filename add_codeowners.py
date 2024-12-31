@@ -1,3 +1,28 @@
+"""
+Adds a codeowners file to a repository via pull request.
+
+At a high level, this helper:
+- Creates a feature branch for a repo on pcdshub
+- Generates a CODEOWNERS file given the requested settings
+- Commits CODEOWNERS file directly to branch
+- Opens a pull request to the default branch
+
+
+Some notes:
+- All of this is done via the github API to avoid local file manipulation.
+- A personal access token (PAT) is needed for API access.  It should have access
+  to the organization's resources, and provide the following scopes:
+    - create fork: "Administration" (write), "Contents" (read)
+    - get repo: "Metadata" (read)
+    - get branch (create ref): "Contents" (write)
+    - create/update contents: "Contents" (write)
+    - create pull request: "Pull requests" (write)
+- Because it seems impossible to scope a PAT to fork an internal / private repo
+  into a personal github accounts, everything is performed on the organization
+    - The token would need access to both the org and user's resources, currently
+    you can only choose one
+    - To do this on pcdshub currently you need bypass powers
+"""
 import argparse
 import base64
 import csv
@@ -92,6 +117,8 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
 
     # gather groups
     default_owners = list(set(settings.sme_owners + settings.area_owners))
+    if not default_owners:
+        default_owners = [CodeownerGroup.ADMIN]
     default_groups = ["@pcdshub/" + grp for grp in default_owners]
 
     # .github admin group
@@ -105,11 +132,12 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
     lines.append("")
 
     # Language specific groups
-    lines.append("# language-specific group(s)")
-    for group in settings.lang_owners:
-        specific_lang_group = ' '.join([f"@pcdshub/{group}"] + default_groups)
-        lines.append(f"{GROUP_TO_EXT[group]} {specific_lang_group}")
-    lines.append("")
+    if settings.lang_owners:
+        lines.append("# language-specific group(s)")
+        for group in settings.lang_owners:
+            specific_lang_group = ' '.join([f"@pcdshub/{group}"] + default_groups)
+            lines.append(f"{GROUP_TO_EXT[group]} {specific_lang_group}")
+        lines.append("")
 
     base_file = "\n".join(lines)
 
@@ -125,7 +153,9 @@ def parse_repo_list(repo_data_path: str) -> List[RepoOwnerSettings]:
     Expects the following header names
     - 'owner': repository owner, organization
     - 'repo_name': repository name
-    - ......
+    - 'sme_owners': subject matter experts
+    - 'area_owners': hutch/area owners
+    - 'lang_owners': programming language experts
 
     Parameters
     ----------
@@ -160,12 +190,7 @@ def create_fork(
     if api is None:
         api = GhApi()  # requires a token for access
 
-    # create fork (verify who authenticated user is)
-    # TODO: Is it even possible to create a fork for an interna/private repo?
-    # - create fork action needs user PAT, but that doesn't have access to org internals
-    # - pcdshub also forbids classic PAT access (though re-enabling it doesn't help)
-    # - Will probably just need to make a branch on the pcdshub repo
-    # succeeds even if fork exists.
+    print(f" > Creating fork of {original_owner}/{repo_name}")
     api.repos.create_fork(original_owner, repo_name, default_branch_only=True)
 
 
@@ -181,10 +206,11 @@ def create_branch(
     if api is None:
         api = GhApi()  # requires a token for access
 
+    print(f" > Create branch: {branch_name}")
     # Create branch from most recent sha
     try:
         api.repos.get_branch(owner, repo_name, branch_name)
-        print(f"  >> found existing branch, deleting branch: {branch_name}")
+        print(" >> found existing branch, deleting branch...")
         api.git.delete_ref(owner, repo_name, f"heads/{branch_name}")
     except HTTPError:
         # branch does not exist, continue to create
@@ -194,7 +220,7 @@ def create_branch(
         owner, repo_name, default_branch_name
     )['commit']['sha']
 
-    print(f"  >> creating new branch: {owner}:{branch_name}")
+    print(f" >> Creating ref: {owner}/{repo_name}:{branch_name} from sha: {head_sha}")
     api.git.create_ref(
         owner,
         repo_name,
@@ -215,6 +241,7 @@ def add_codeowners_file_to_branch(
     if api is None:
         api = GhApi()  # requires a token for access
 
+    print(f" > adding CODEOWNERS file to branch: {branch_name}")
     try:
         # if file exists, grab its sha so we can edit it
         current_file_sha = api.repos.get_content(
@@ -223,7 +250,7 @@ def add_codeowners_file_to_branch(
             ".github/CODEOWNERS",
             branch_name,
         ).sha
-        print("  >> File exists, will modify existing CODEOWNERS")
+        print(" >> File exists, will modify existing CODEOWNERS")
     except HTTPError:
         # file not found, create a new file
         current_file_sha = None
@@ -255,15 +282,59 @@ def create_codeowner_pr(
         api = GhApi()  # requires a token for access
 
     # Create pull request
-    print(f"  >> Creating pull request: {title}")
+    print(f" > Creating pull request: {title}")
     api.pulls.create(
         owner=upstream,
         repo=repo_name,
         title=title,
-        head=f"{upstream}:{branch_name}",
+        head=f"{upstream}:{branch_name}",  # This could also point to contributor
         base=base_branch_name,
         body=body,
         maintainer_can_modify=True
+    )
+
+
+def add_codeowners_from_setting(
+    settings: RepoOwnerSettings,
+    user: str,
+    branch_name: str,
+    commit_message: str,
+    api: Optional[GhApi],
+):
+    if api is None:
+        api = GhApi()  # requires a token for access
+
+    # create_fork(
+    #     repo_name=settings.repo_name,
+    #     original_owner=settings.owner,
+    #     api=api,
+    # )
+    repo_info = api.repos.get(settings.owner, settings.repo_name)
+    default_branch_name = repo_info["default_branch"]
+    create_branch(
+        owner=settings.owner,
+        repo_name=settings.repo_name,
+        branch_name=branch_name,
+        default_branch_name=default_branch_name,
+        api=api,
+    )
+    codeowner_file = create_codeowners_file(settings)
+    print(base64.b64decode(codeowner_file).decode('utf-8'))
+    add_codeowners_file_to_branch(
+        owner=settings.owner,
+        repo_name=settings.repo_name,
+        branch_name=branch_name,
+        codeowner_data=codeowner_file,
+        commit_message=commit_message,
+        api=api,
+    )
+    create_codeowner_pr(
+        repo_name=settings.repo_name,
+        contributor=user,
+        upstream=settings.owner,
+        base_branch_name=default_branch_name,
+        branch_name=branch_name,
+        api=api,
     )
 
 
@@ -280,12 +351,6 @@ def main(
     write: bool = False
 ):
     """
-    Requires fine grained token permissions as pcdshub (to see internal):
-    - create fork: "Administration" (write), "Contents" (read)
-    - get repo: "Metadata" (read)
-    - get branch (create ref): "Contents" (write)
-    - create/update contents: "Contents" (write)
-    - create pull request: "Pull requests" (write)
     """
     # Set dry-run option
     DryRunner.set(run=write)
@@ -296,44 +361,34 @@ def main(
         repo_data = parse_repo_list(repo_data_path)
         for settings in repo_data:
             print(f"--- working on {settings.repo_name}...")
-            # create_fork(
-            #     repo_name=settings.repo_name,
-            #     original_owner=settings.owner,
-            #     api=api,
-            # )
-            repo_info = api.repos.get(settings.owner, settings.repo_name)
-            default_branch_name = repo_info["default_branch"]
-            create_branch(
-                owner=settings.owner,
-                repo_name=settings.repo_name,
-                branch_name=branch_name,
-                default_branch_name=default_branch_name,
-                api=api,
+            add_codeowners_from_setting(
+                settings, user, branch_name, commit_message, api=api
             )
-            codeowner_file = create_codeowners_file(settings)
-            print(base64.b64decode(codeowner_file).decode('utf-8'))
-            add_codeowners_file_to_branch(
-                owner=settings.owner,
-                repo_name=settings.repo_name,
-                branch_name=branch_name,
-                codeowner_data=codeowner_file,
-                commit_message=commit_message,
-                api=api,
-            )
-            create_codeowner_pr(
-                repo_name=settings.repo_name,
-                contributor=user,
-                upstream=settings.owner,
-                base_branch_name=default_branch_name,
-                branch_name=branch_name,
-                api=api,
-            )
+
+        return
 
     if not repo_name:
         return
 
-    # apply
-    print("End of function")
+    # apply on a per-repo basis
+    sme_owners = [CodeownerGroup(grp) for grp in sme]
+    area_owners = [CodeownerGroup(grp) for grp in area]
+    lang_owners = [CodeownerGroup(grp) for grp in lang]
+
+    print(sme_owners, area_owners, lang_owners)
+
+    settings = RepoOwnerSettings(
+        owner=owner,
+        repo_name=repo_name,
+        sme_owners=sme_owners,
+        area_owners=area_owners,
+        lang_owners=lang_owners,
+    )
+
+    print(f"--- working on {settings.repo_name}...")
+    add_codeowners_from_setting(
+        settings, user, branch_name, commit_message, api=api
+    )
 
 
 def _create_argparser() -> argparse.ArgumentParser:
