@@ -38,6 +38,9 @@ class DryRunner:
         """
         Decorator that runs the enclosed snippet if dry_run=False
         Logs (prints) the action in either case
+
+        This does prevent static analysis from detecting the signature of the
+        wrapped function.  This may be alleviated in 3.10 with ParamSpec
         """
         @functools.wraps(func)
         def _decorated(*args, **kwargs):

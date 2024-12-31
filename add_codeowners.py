@@ -9,6 +9,8 @@ from urllib.error import HTTPError
 
 from ghapi.all import GhApi
 
+from helpers import DryRunner
+
 
 class CodeownerGroup(str, Enum):
     ADMIN = "software-admin"
@@ -38,7 +40,7 @@ class CodeownerGroup(str, Enum):
 class RepoOwnerSettings:
     owner: str
     repo_name: str
-    default_owners: List[CodeownerGroup]
+    sme_owners: List[CodeownerGroup]
     lang_owners: List[CodeownerGroup]
     area_owners: List[CodeownerGroup]
 
@@ -47,16 +49,15 @@ class RepoOwnerSettings:
         settings = cls(
             owner=source["owner"],
             repo_name=source["repo_name"],
-            repo_type=source["repo_type"],
-            default_owners=[CodeownerGroup(value.strip) for value in
-                            source["default_owners"].split(',') if value],
-            area_owners=[CodeownerGroup(value.strip) for value in
+            sme_owners=[CodeownerGroup(value.strip()) for value in
+                        source["sme_owners"].split(',') if value],
+            area_owners=[CodeownerGroup(value.strip()) for value in
                          source["area_owners"].split(',') if value],
-            lang_owners=[CodeownerGroup(value.strip) for value in
+            lang_owners=[CodeownerGroup(value.strip()) for value in
                          source["lang_owners"].split(',') if value],
         )
 
-        settings.default_owners.sort()
+        settings.sme_owners.sort()
         settings.area_owners.sort()
         settings.lang_owners.sort()
 
@@ -74,11 +75,23 @@ GROUP_TO_EXT: Dict[CodeownerGroup, str] = {
 
 
 def create_codeowners_file(settings: RepoOwnerSettings) -> str:
-    """Create codeowners file based on RepoOwnerSettings"""
+    """
+    Create codeowners file based on RepoOwnerSettings
+
+    See https://confluence.slac.stanford.edu/x/u5Q9Hw for details.
+    By default:
+    - "default" = sme_owners + area_owners
+    - .github owned by admins only
+    - Default (*): default
+    - language specific files: default + lang_owners
+
+    Returns content encoded to and from base64 utf-8, in order to ensure the
+    payload is appropriate for github's REST API
+    """
     lines = []
 
     # gather groups
-    default_owners = list(set(settings.default_owners + settings.area_owners))
+    default_owners = list(set(settings.sme_owners + settings.area_owners))
     default_groups = ["@pcdshub/" + grp for grp in default_owners]
 
     # .github admin group
@@ -98,7 +111,11 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
         lines.append(f"{GROUP_TO_EXT[group]} {specific_lang_group}")
     lines.append("")
 
-    return "\n".join(lines)
+    base_file = "\n".join(lines)
+
+    # ensure file contents can be base64 encoded for submission to github API
+    encoded_content = base64.b64encode(base_file.encode('utf-8'))
+    return encoded_content.decode("ascii")
 
 
 def parse_repo_list(repo_data_path: str) -> List[RepoOwnerSettings]:
@@ -134,102 +151,189 @@ def parse_repo_list(repo_data_path: str) -> List[RepoOwnerSettings]:
     return repo_data
 
 
-def create_codeowner_pr(
-    settings: RepoOwnerSettings,
-    contributor_acct: str,
-    branch_name: str = 'mnt_add_codeowners',
-    commit_message: str = "Adding CODEOWNERS file",
+@DryRunner()
+def create_fork(
+    repo_name: str,
+    original_owner: str = "pcdshub",
     api: Optional[GhApi] = None,
+) -> None:
+    if api is None:
+        api = GhApi()  # requires a token for access
+
+    # create fork (verify who authenticated user is)
+    # TODO: Is it even possible to create a fork for an interna/private repo?
+    # - create fork action needs user PAT, but that doesn't have access to org internals
+    # - pcdshub also forbids classic PAT access (though re-enabling it doesn't help)
+    # - Will probably just need to make a branch on the pcdshub repo
+    # succeeds even if fork exists.
+    api.repos.create_fork(original_owner, repo_name, default_branch_only=True)
+
+
+@DryRunner()
+def create_branch(
+    owner: str,
+    repo_name: str,
+    branch_name: str,
+    default_branch_name: str = "master",
+    api: Optional[GhApi] = None,
+) -> None:
+    """create branch on owner repo"""
+    if api is None:
+        api = GhApi()  # requires a token for access
+
+    # Create branch from most recent sha
+    try:
+        api.repos.get_branch(owner, repo_name, branch_name)
+        print(f"  >> found existing branch, deleting branch: {branch_name}")
+        api.git.delete_ref(owner, repo_name, f"heads/{branch_name}")
+    except HTTPError:
+        # branch does not exist, continue to create
+        pass
+
+    head_sha = api.repos.get_branch(
+        owner, repo_name, default_branch_name
+    )['commit']['sha']
+
+    print(f"  >> creating new branch: {owner}:{branch_name}")
+    api.git.create_ref(
+        owner,
+        repo_name,
+        f'refs/heads/{branch_name}',
+        head_sha
+    )
+
+
+@DryRunner()
+def add_codeowners_file_to_branch(
+    owner: str,
+    repo_name: str,
+    branch_name: str,
+    codeowner_data: str,
+    commit_message: str = "MNT: Adding CODEOWNERS file",
+    api: Optional[GhApi] = None,
+) -> None:
+    if api is None:
+        api = GhApi()  # requires a token for access
+
+    try:
+        # if file exists, grab its sha so we can edit it
+        current_file_sha = api.repos.get_content(
+            owner,
+            repo_name,
+            ".github/CODEOWNERS",
+            branch_name,
+        ).sha
+        print("  >> File exists, will modify existing CODEOWNERS")
+    except HTTPError:
+        # file not found, create a new file
+        current_file_sha = None
+
+    print(" >> Adding new codeowners data...")
+    api.repos.create_or_update_file_contents(
+        owner=owner,
+        repo=repo_name,
+        path=".github/CODEOWNERS",
+        message=commit_message,
+        content=codeowner_data,
+        sha=current_file_sha,
+        branch=branch_name,
+    )
+
+
+@DryRunner()
+def create_codeowner_pr(
+    repo_name: str,
+    contributor: str,
+    upstream: str = "pcdshub",
+    base_branch_name: str = "master",
+    branch_name: str = "mnt_add_codeowners",
+    title: str = "MNT: Adding CODEOWNERS file",
+    body: str = "(autogenerated) adding codeowners file",
+    api: Optional[GhApi] = None,
+) -> None:
+    if api is None:
+        api = GhApi()  # requires a token for access
+
+    # Create pull request
+    print(f"  >> Creating pull request: {title}")
+    api.pulls.create(
+        owner=upstream,
+        repo=repo_name,
+        title=title,
+        head=f"{upstream}:{branch_name}",
+        base=base_branch_name,
+        body=body,
+        maintainer_can_modify=True
+    )
+
+
+def main(
+    owner: str = "pcdshub",
+    user: str = "",
+    repo_name: str = "",
+    branch_name: str = "mnt_add_codeowners",
+    commit_message: str = "MNT: Adding CODEOWNERS file",
+    sme: Optional[List[str]] = None,
+    area: Optional[List[str]] = None,
+    lang: Optional[List[str]] = None,
+    repo_data_path: str = "",
+    write: bool = False
 ):
     """
-
-    Requires fine grained token permissions:
+    Requires fine grained token permissions as pcdshub (to see internal):
     - create fork: "Administration" (write), "Contents" (read)
     - get repo: "Metadata" (read)
     - get branch (create ref): "Contents" (write)
     - create/update contents: "Contents" (write)
     - create pull request: "Pull requests" (write)
-
-    Parameters
-    ----------
-    settings : RepoOwnerSettings
-        _description_
-    contributor_acct : str
-        _description_
-    branch_name : str, optional
-        _description_, by default 'mnt_add_codeowners'
-    commit_message : str, optional
-        _description_, by default "Adding CODEOWNERS file"
-    api : Optional[GhApi], optional
-        _description_, by default None
     """
-
-    if api is None:
-        api = GhApi()  # requires a token for access
+    # Set dry-run option
+    DryRunner.set(run=write)
+    api = GhApi()
 
     # parse csv with settings
-    # for repo in repos:
-    repo_name = settings.repo_name
-    # create relevant codeowner file
-    # create fork (verify who authenticated user is)
-    api.repos.create_fork("pcdshub", repo_name, default_branch_only=False)
-    # Create branch from most recent sha
-    repo_info = api.repos.get(contributor_acct, repo_name)
-    head_sha = api.repos.get_branch(
-        contributor_acct, repo_name, repo_info['default_branch']
-    )['commit']['sha']
+    if repo_data_path:
+        repo_data = parse_repo_list(repo_data_path)
+        for settings in repo_data:
+            print(f"--- working on {settings.repo_name}...")
+            # create_fork(
+            #     repo_name=settings.repo_name,
+            #     original_owner=settings.owner,
+            #     api=api,
+            # )
+            repo_info = api.repos.get(settings.owner, settings.repo_name)
+            default_branch_name = repo_info["default_branch"]
+            create_branch(
+                owner=settings.owner,
+                repo_name=settings.repo_name,
+                branch_name=branch_name,
+                default_branch_name=default_branch_name,
+                api=api,
+            )
+            codeowner_file = create_codeowners_file(settings)
+            print(base64.b64decode(codeowner_file).decode('utf-8'))
+            add_codeowners_file_to_branch(
+                owner=settings.owner,
+                repo_name=settings.repo_name,
+                branch_name=branch_name,
+                codeowner_data=codeowner_file,
+                commit_message=commit_message,
+                api=api,
+            )
+            create_codeowner_pr(
+                repo_name=settings.repo_name,
+                contributor=user,
+                upstream=settings.owner,
+                base_branch_name=default_branch_name,
+                branch_name=branch_name,
+                api=api,
+            )
 
-    try:
-        api.repos.get_branch("tangkong", repo_name, "mnt_add_codeowners")
-        api.git.delete_ref("tangkong", repo_name, "heads/mnt_add_codeowners")
-    except HTTPError:
-        # branch does not exist, continue to create
-        pass
+    if not repo_name:
+        return
 
-    api.git.create_ref(
-        'tangkong',
-        repo_name,
-        'refs/heads/mnt_add_codeowners',
-        head_sha
-    )
-
-    codeowner_file = create_codeowners_file(settings)
-    # ensure file contents can be base64 encoded
-    encoded_content = base64.b64encode(codeowner_file.encode('utf-8'))
-    decoded_content = encoded_content.decode("ascii")
-
-    try:
-        # if file exists, grab its sha so we can edit it
-        current_file_sha = api.repos.get_content(
-            "tangkong",
-            repo_name,
-            ".github/CODEOWNERS",
-            branch_name,
-        ).sha
-    except HTTPError:
-        # file not found, create a new file
-        current_file_sha = None
-
-    api.repos.create_or_update_file_contents(
-        owner=contributor_acct,
-        repo=repo_name,
-        path=".github/CODEOWNERS",
-        message=commit_message,
-        content=decoded_content,
-        sha=current_file_sha,
-        branch=branch_name,
-    )
-
-    # Create pull request
-    api.pulls.create(
-        owner="pcdshub",
-        repo=repo_name,
-        title="MNT: Creating CODEOWNER file",
-        head=f"{contributor_acct}:{branch_name}",
-        base=repo_info['default_branch'],
-        body="(autogenerated) Adding CODEOWNERS file",
-        maintainer_can_modify=True
-    )
+    # apply
+    print("End of function")
 
 
 def _create_argparser() -> argparse.ArgumentParser:
@@ -245,8 +349,27 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("owner", type=str, default='pcdshub', nargs='?',
                         help='Organization or owner of the repository, "pcdshub"'
                              'by default')
+    parser.add_argument("user", type=str,
+                        help="Name of account to contribute from, the fork will "
+                             "created on this github account")
+    parser.add_argument("branch_name", type=str, default="mnt_add_codeowners",
+                        help="Name of branch to create on fork and submit upstream")
+
+    # manually specify settings
     parser.add_argument("repo_name", type=str, default='', nargs='?',
                         help='Name of the repository')
+    parser.add_argument("--sme", type=str, nargs='*',
+                        choices=[g.value for g in CodeownerGroup
+                                 if "sme" in g.value],
+                        help='Subject Matter Experts for the repository.')
+    parser.add_argument("--area", type=str, nargs='*',
+                        choices=[g.value for g in CodeownerGroup
+                                 if "member" in g.value],
+                        help='Area (Hutch) owners for the repository.')
+    parser.add_argument("--lang", type=str, nargs='*',
+                        choices=[g.value for g in CodeownerGroup
+                                 if "reviewers" in g.value],
+                        help='Language experts for the repository.')
 
     # Optionally specify everything at once
     parser.add_argument("--repo-data-path", type=str, dest='repo_data_path',
@@ -260,9 +383,8 @@ def _create_argparser() -> argparse.ArgumentParser:
 
 def _main(args=None):
     """CLI entrypoint."""
-    return
-    # parser = _create_argparser()
-    # return main(**vars(parser.parse_args(args=args)))
+    parser = _create_argparser()
+    return main(**vars(parser.parse_args(args=args)))
 
 
 if __name__ == "__main__":
