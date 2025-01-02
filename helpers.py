@@ -2,6 +2,7 @@
 
 
 import functools
+from textwrap import shorten
 from typing import Any, Optional
 
 
@@ -45,7 +46,12 @@ class DryRunner:
         @functools.wraps(func)
         def _decorated(*args, **kwargs):
             if not self._run:
-                print(f"(dry run) {func.__name__}({self._msg})")
+                args_string = ', '.join([shorten(str(arg), 20) for arg in args])
+                kwargs_string = ', '.join(f'{key}={shorten(str(val), 20)}'
+                                          for key, val in kwargs.items())
+                dry_run_out = f"(dry run) {func.__name__}(\n" \
+                              f"  {args_string},\n  {kwargs_string}\n): '{self._msg}'"
+                print(dry_run_out)
                 return self._ret_val
             else:
                 return func(*args, **kwargs)
