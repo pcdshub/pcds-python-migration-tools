@@ -377,7 +377,7 @@ def add_codeowners_from_setting(
 
 def main(
     owner: str = "pcdshub",
-    user: str = "",
+    user: str = "pcdshub",
     repo_name: str = "",
     branch_name: str = "mnt_add_codeowners",
     commit_message: str = "MNT: Adding CODEOWNERS file",
@@ -410,6 +410,7 @@ def main(
         return
 
     if not repo_name:
+        print("Neither repo name nor repo data path provided, nothing to do")
         return
 
     # apply on a per-repo basis
@@ -451,10 +452,10 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("owner", type=str, default='pcdshub', nargs='?',
                         help='Organization or owner of the repository, "pcdshub"'
                              'by default')
-    parser.add_argument("user", type=str,
+    parser.add_argument("user", type=str, default='pcdshub', nargs='?',
                         help="Name of account to contribute from, the fork will "
                              "created on this github account if required.")
-    parser.add_argument("branch_name", type=str, default="mnt_add_codeowners",
+    parser.add_argument("branch_name", type=str, default="mnt_add_codeowners", nargs='?',
                         help="Name of branch to create on fork and submit upstream")
 
     # manually specify settings
@@ -478,6 +479,7 @@ def _create_argparser() -> argparse.ArgumentParser:
                         help='Path to repo data csv.  Expects columns for: '
                              f'{[f.name for f in fields(RepoOwnerSettings)]}')
 
+    # dry run?
     parser.add_argument("--write", action="store_true", dest="write",
                         help="(by default False) Apply the changes.  "
                              "If not specified, this will dry run and display the "
