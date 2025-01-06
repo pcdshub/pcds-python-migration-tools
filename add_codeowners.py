@@ -42,7 +42,7 @@ class CodeownerGroup(str, Enum):
     TWINCAT = "twincat-reviewers"
     EPICS = "epics-reviewers"
     SHELL = "shell-reviewers"
-    CPP = "cpp-reviewers"
+    C = "c-reviewers"
     VACUUM_SME = "vacuum-sme"
     LASER_SME = "laser-sme"
     MOTION_SME = "motion-sme"
@@ -92,8 +92,8 @@ class RepoOwnerSettings:
 GROUP_TO_EXT: Dict[CodeownerGroup, str] = {
     CodeownerGroup.PYTHON: '*.py*',
     CodeownerGroup.TWINCAT: '*.{plcproj,sln,TcDUT,TcGVL,TcPOU,TcTTO,tmc,tsproj,xti}',
-    CodeownerGroup.CPP: '*.{cpp,cc,h++,hh,hpp}',
-    CodeownerGroup.SHELL: '*.sh',
+    CodeownerGroup.C: '*.{c,cpp,cc,h,h++,hh,hpp}',
+    CodeownerGroup.SHELL: '*.{sh,zsh,csh,bash}',
     CodeownerGroup.EPICS: '*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
                           'sub-arch,sub-req,substitutions,tpl-arch,tpl-req}',
 }
