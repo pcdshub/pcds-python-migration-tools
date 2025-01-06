@@ -142,7 +142,7 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
 
     # ensure file contents can be base64 encoded for submission to github API
     encoded_content = base64.b64encode(base_file.encode('utf-8'))
-    return encoded_content.decode("ascii")
+    return encoded_content.decode("utf-8")
 
 
 def parse_repo_list(repo_data_path: str) -> List[RepoOwnerSettings]:
