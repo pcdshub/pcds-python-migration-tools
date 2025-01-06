@@ -38,17 +38,26 @@ from helpers import DryRunner
 
 class CodeownerGroup(str, Enum):
     ADMIN = "software-admin"
+
+
+class LanguageOwners(str, Enum):
     PYTHON = "python-reviewers"
     TWINCAT = "twincat-reviewers"
     EPICS = "epics-reviewers"
     SHELL = "shell-reviewers"
     C = "c-reviewers"
+
+
+class SMEOwners(str, Enum):
     VACUUM_SME = "vacuum-sme"
     LASER_SME = "laser-sme"
     MOTION_SME = "motion-sme"
     PMPS_SME = "pmps-sme"
     UI_SME = "ui-sme"
     LCLS_NAMING = "lcls-naming-council"
+
+
+class AreaOwners(str, Enum):
     CXI = "cxi-members"
     LAS = "las-members"
     MEC = "mec-members"
@@ -65,20 +74,20 @@ class CodeownerGroup(str, Enum):
 class RepoOwnerSettings:
     owner: str
     repo_name: str
-    sme_owners: List[CodeownerGroup]
-    lang_owners: List[CodeownerGroup]
-    area_owners: List[CodeownerGroup]
+    sme_owners: List[SMEOwners]
+    lang_owners: List[LanguageOwners]
+    area_owners: List[AreaOwners]
 
     @classmethod
     def from_dict(cls, source: dict):
         settings = cls(
             owner=source["owner"],
             repo_name=source["repo_name"],
-            sme_owners=[CodeownerGroup(value.strip()) for value in
+            sme_owners=[SMEOwners(value.strip()) for value in
                         source["sme_owners"].split(',') if value],
-            area_owners=[CodeownerGroup(value.strip()) for value in
+            area_owners=[AreaOwners(value.strip()) for value in
                          source["area_owners"].split(',') if value],
-            lang_owners=[CodeownerGroup(value.strip()) for value in
+            lang_owners=[LanguageOwners(value.strip()) for value in
                          source["lang_owners"].split(',') if value],
         )
 
@@ -89,12 +98,12 @@ class RepoOwnerSettings:
         return settings
 
 
-GROUP_TO_EXT: Dict[CodeownerGroup, str] = {
-    CodeownerGroup.PYTHON: '*.py*',
-    CodeownerGroup.TWINCAT: '*.{plcproj,sln,TcDUT,TcGVL,TcPOU,TcTTO,tmc,tsproj,xti}',
-    CodeownerGroup.C: '*.{c,cpp,cc,h,h++,hh,hpp}',
-    CodeownerGroup.SHELL: '*.{sh,zsh,csh,bash}',
-    CodeownerGroup.EPICS: '*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
+GROUP_TO_EXT: Dict[LanguageOwners, str] = {
+    LanguageOwners.PYTHON: '*.py*',
+    LanguageOwners.TWINCAT: '*.{plcproj,sln,TcDUT,TcGVL,TcPOU,TcTTO,tmc,tsproj,xti}',
+    LanguageOwners.C: '*.{c,cpp,cc,h,h++,hh,hpp}',
+    LanguageOwners.SHELL: '*.{sh,zsh,csh,bash}',
+    LanguageOwners.EPICS: '*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
                           'sub-arch,sub-req,substitutions,tpl-arch,tpl-req}',
 }
 
@@ -426,9 +435,9 @@ def main(
         return
 
     # apply on a per-repo basis
-    sme_owners = [CodeownerGroup(grp) for grp in sme]
-    area_owners = [CodeownerGroup(grp) for grp in area]
-    lang_owners = [CodeownerGroup(grp) for grp in lang]
+    sme_owners = [SMEOwners(grp) for grp in sme]
+    area_owners = [AreaOwners(grp) for grp in area]
+    lang_owners = [LanguageOwners(grp) for grp in lang]
 
     print(sme_owners, area_owners, lang_owners)
 
@@ -474,16 +483,13 @@ def _create_argparser() -> argparse.ArgumentParser:
     parser.add_argument("repo_name", type=str, default='', nargs='?',
                         help='Name of the repository')
     parser.add_argument("--sme", type=str, nargs='*',
-                        choices=[g.value for g in CodeownerGroup
-                                 if "sme" in g.value],
+                        choices=[g.value for g in SMEOwners],
                         help='Subject Matter Experts for the repository.')
     parser.add_argument("--area", type=str, nargs='*',
-                        choices=[g.value for g in CodeownerGroup
-                                 if "member" in g.value],
+                        choices=[g.value for g in AreaOwners],
                         help='Area (Hutch) owners for the repository.')
     parser.add_argument("--lang", type=str, nargs='*',
-                        choices=[g.value for g in CodeownerGroup
-                                 if "reviewers" in g.value],
+                        choices=[g.value for g in LanguageOwners],
                         help='Language experts for the repository.')
 
     # Optionally specify everything at once
