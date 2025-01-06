@@ -49,13 +49,14 @@ class CodeownerGroup(str, Enum):
     PMPS_SME = "pmps-sme"
     UI_SME = "ui-sme"
     LCLS_NAMING = "lcls-naming-council"
-    TMO = "tmo-members"
     CXI = "cxi-members"
     LAS = "las-members"
     MEC = "mec-members"
     MFX = "mfx-members"
     RIX = "rix-members"
+    TMO = "tmo-members"
     TXI = "txi-members"
+    UED = "ued-members"
     XCS = "xcs-members"
     XPP = "xpp-members"
 
@@ -91,7 +92,7 @@ class RepoOwnerSettings:
 GROUP_TO_EXT: Dict[CodeownerGroup, str] = {
     CodeownerGroup.PYTHON: '*.py*',
     CodeownerGroup.TWINCAT: '*.{plcproj,sln,TcDUT,TcGVL,TcPOU,TcTTO,tmc,tsproj,xti}',
-    CodeownerGroup.CPP: '*.cpp',
+    CodeownerGroup.CPP: '*.{cpp,cc,h++,hh,hpp}',
     CodeownerGroup.SHELL: '*.sh',
     CodeownerGroup.EPICS: '*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
                           'sub-arch,sub-req,substitutions,tpl-arch,tpl-req}',
