@@ -121,11 +121,6 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
         default_owners = [CodeownerGroup.ADMIN]
     default_groups = ["@pcdshub/" + grp for grp in default_owners]
 
-    # .github admin group
-    lines.append("# github folder holds administrative files")
-    lines.append(f".github/** @pcdshub/{CodeownerGroup.ADMIN}")
-    lines.append("")
-
     # default group
     lines.append("# default group")
     lines.append(f"* {' '.join(default_groups)}")
@@ -138,6 +133,11 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
             specific_lang_group = ' '.join([f"@pcdshub/{group}"] + default_groups)
             lines.append(f"{GROUP_TO_EXT[group]} {specific_lang_group}")
         lines.append("")
+
+    # .github admin group
+    lines.append("# github folder holds administrative files")
+    lines.append(f".github/** @pcdshub/{CodeownerGroup.ADMIN}")
+    lines.append("")
 
     base_file = "\n".join(lines)
 
