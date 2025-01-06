@@ -100,7 +100,8 @@ class RepoOwnerSettings:
 
 GROUP_TO_EXT: Dict[LanguageOwners, str] = {
     LanguageOwners.PYTHON: '*.py*',
-    LanguageOwners.TWINCAT: '*.{plcproj,sln,TcDUT,TcGVL,TcPOU,TcTTO,tmc,tsproj,xti}',
+    LanguageOwners.TWINCAT: '*.{tsproj,plcproj,tmc,tpr,xti,TcTTO,TcPOU,TcDUT,TcGVL,'
+                            'TcVis,TcVMO,TcGTLO}',
     LanguageOwners.C: '*.{c,cpp,cc,h,h++,hh,hpp}',
     LanguageOwners.SHELL: '*.{sh,zsh,csh,bash}',
     LanguageOwners.EPICS: '*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
