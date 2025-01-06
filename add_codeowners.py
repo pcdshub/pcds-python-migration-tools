@@ -12,7 +12,6 @@ Some notes:
 - All of this is done via the github API to avoid local file manipulation.
 - A personal access token (PAT) is needed for API access.  It should have access
   to the organization's resources, and provide the following scopes:
-    - create fork: "Administration" (write), "Contents" (read)
     - get repo: "Metadata" (read)
     - get branch (create ref): "Contents" (write)
     - create/update contents: "Contents" (write)
@@ -352,11 +351,6 @@ def add_codeowners_from_setting(
     if reviewers is None:
         reviewers = []
 
-    # create_fork(
-    #     repo_name=settings.repo_name,
-    #     original_owner=settings.owner,
-    #     api=api,
-    # )
     repo_info = api.repos.get(settings.owner, settings.repo_name)
     default_branch_name = repo_info["default_branch"]
     create_branch(
@@ -473,7 +467,7 @@ def _create_argparser() -> argparse.ArgumentParser:
                         help="Name of account to contribute from, the fork will "
                              "created on this github account if required.")
     parser.add_argument("branch_name", type=str, default="mnt_add_codeowners", nargs='?',
-                        help="Name of branch to create on fork and submit upstream")
+                        help="Name of branch to create and submit to upstream")
 
     # manually specify settings
     parser.add_argument("repo_name", type=str, default='', nargs='?',
