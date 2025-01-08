@@ -363,6 +363,11 @@ def add_codeowners_from_setting(
         reviewers = []
 
     repo_info = api.repos.get(settings.owner, settings.repo_name)
+
+    if repo_info['archived']:
+        print(" > skipping archived repo")
+        return
+
     default_branch_name = repo_info["default_branch"]
     create_branch(
         owner=settings.owner,
