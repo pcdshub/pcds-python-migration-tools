@@ -26,3 +26,15 @@ repos:
     rev: 5.12.0
     hooks:
     -   id: isort
+
+-   repo: https://github.com/pecigonzalo/pre-commit-shfmt
+    rev: v2.2.0
+    hooks:
+    -   id: shell-fmt-go
+        args: [-l, -w, -s, -fn, -sr, -ci, -i=4, -d]
+
+-   repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+    -   id: shellcheck
+        args: [-x]  # allow source files outside of checked files
