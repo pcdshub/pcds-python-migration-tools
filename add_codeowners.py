@@ -104,8 +104,9 @@ GROUP_TO_EXT: Dict[LanguageOwners, str] = {
                             'TcVis,TcVMO,TcGTLO}',
     LanguageOwners.C: '*.{c,cpp,cc,h,h++,hh,hpp}',
     LanguageOwners.SHELL: '*.{sh,zsh,csh,bash}',
-    LanguageOwners.EPICS: '*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
-                          'sub-arch,sub-req,substitutions,tpl-arch,tpl-req}',
+    LanguageOwners.EPICS: '{*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
+                          'sub-arch,sub-req,substitutions,tpl-arch,tpl-req},'
+                          'RELEASE_SITE,/configure/RELEASE}',
 }
 
 
