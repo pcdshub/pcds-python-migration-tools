@@ -98,15 +98,18 @@ class RepoOwnerSettings:
         return settings
 
 
-GROUP_TO_EXT: Dict[LanguageOwners, str] = {
-    LanguageOwners.PYTHON: '*.py*',
-    LanguageOwners.TWINCAT: '*.{tsproj,plcproj,tmc,tpr,xti,TcTTO,TcPOU,TcDUT,TcGVL,'
-                            'TcVis,TcVMO,TcGTLO}',
-    LanguageOwners.C: '*.{c,cpp,cc,h,h++,hh,hpp}',
-    LanguageOwners.SHELL: '*.{sh,zsh,csh,bash}',
-    LanguageOwners.EPICS: '{*.{archive,autosave,cmd,db,dbd,edl,ioc,proto,req,'
-                          'sub-arch,sub-req,substitutions,tpl-arch,tpl-req},'
-                          'RELEASE_SITE,/configure/RELEASE}',
+GROUP_TO_EXT: Dict[LanguageOwners, list[str]] = {
+    LanguageOwners.PYTHON: ['*.py', '*.pyi', '*.pyc', '*.pyw', '*.pyx', '*.pyd'],
+    LanguageOwners.TWINCAT: ['*.tsproj', '*.plcproj', '*.tmc', '*.tpr', '*.xti',
+                             '*.TcTTO', '*.TcPOU', '*.TcDUT', '*.TcGVL', '*.TcVis',
+                             '*.TcVMO', '*.TcGTLO'],
+    LanguageOwners.C: ['*.c', '*.cpp', '*.cc', '*.h', '*.h++', '*.hh', '*.hpp'],
+    LanguageOwners.SHELL: ['*.sh', '*.zsh', '*.csh', '*.bash'],
+    LanguageOwners.EPICS: ['*.archive', '*.autosave', '*.cmd', '*.db', '*.dbd',
+                           '*.edl', '*.ioc', '*.proto', '*.req',
+                           '*.sub-arch', '*.sub-req', '*.substitutions',
+                           '*.tpl-arch', '*.tpl-req', 'RELEASE_SITE',
+                           '/configure/RELEASE'],
 }
 
 
@@ -142,7 +145,8 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
         lines.append("# language-specific group(s)")
         for group in settings.lang_owners:
             specific_lang_group = ' '.join([f"@pcdshub/{group}"] + default_groups)
-            lines.append(f"{GROUP_TO_EXT[group]} {specific_lang_group}")
+            for rule in GROUP_TO_EXT[group]:
+                lines.append(f"{rule} {specific_lang_group}")
         lines.append("")
 
     # .github admin group
