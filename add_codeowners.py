@@ -52,6 +52,7 @@ class SMEOwners(str, Enum):
     VACUUM_SME = "vacuum-sme"
     LASER_SME = "laser-sme"
     MOTION_SME = "motion-sme"
+    OPTICS_SME = "optics-sme"
     PMPS_SME = "pmps-sme"
     UI_SME = "ui-sme"
     LCLS_NAMING = "lcls-naming-council"
@@ -130,8 +131,12 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
     lines = []
 
     # gather groups
-    default_owners = list(set(settings.sme_owners + settings.area_owners))
-    if not default_owners:
+    base_default_owners = list(set(settings.sme_owners + settings.area_owners))
+    if base_default_owners:
+        default_owners = base_default_owners
+    elif not base_default_owners and settings.lang_owners:
+        default_owners = settings.lang_owners
+    else:
         default_owners = [CodeownerGroup.ADMIN]
     default_groups = ["@pcdshub/" + grp for grp in default_owners]
 
@@ -144,7 +149,9 @@ def create_codeowners_file(settings: RepoOwnerSettings) -> str:
     if settings.lang_owners:
         lines.append("# language-specific group(s)")
         for group in settings.lang_owners:
-            specific_lang_group = ' '.join([f"@pcdshub/{group}"] + default_groups)
+            lines.append(f"## {group.name} files")
+            specific_lang_group = ' '.join([f"@pcdshub/{grp}" for grp
+                                            in set([group] + base_default_owners)])
             for rule in GROUP_TO_EXT[group]:
                 lines.append(f"{rule} {specific_lang_group}")
         lines.append("")
@@ -336,7 +343,7 @@ def create_pull_request(
         maintainer_can_modify=True
     )
 
-    print(f" > requesting reviews from {reviewers}")
+    print(f" > requesting reviews from individuals: {reviewers}, teams: {team_reviewers}")
 
     api.pulls.request_reviewers(
         owner=upstream,
@@ -370,10 +377,14 @@ def add_codeowners_from_setting(
     if reviewers is None:
         reviewers = []
 
-    repo_info = api.repos.get(settings.owner, settings.repo_name)
+    try:
+        repo_info = api.repos.get(settings.owner, settings.repo_name)
+    except HTTPError:
+        print(f" > Unable to access {settings.owner}/{settings.repo_name}")
+        return
 
     if repo_info['archived']:
-        print(" > skipping archived repo")
+        print(f" > skipping archived repo: {settings.repo_name}")
         return
 
     default_branch_name = repo_info["default_branch"]
