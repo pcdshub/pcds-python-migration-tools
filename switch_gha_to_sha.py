@@ -257,7 +257,6 @@ def main():
             # Has staged changes, we need to commit them.
             subprocess.run(["git", "commit", "-m", "AUTO: apply dependabot and GHA SHAs"], cwd=repo_dir, check=True)
 
-    # Temporary
     for repo_name in repos_to_update:
         repo_dir = CLONES / repo_name
         last_commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_dir, universal_newlines=True).strip()
