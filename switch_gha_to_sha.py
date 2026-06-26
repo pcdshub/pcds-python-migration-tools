@@ -248,6 +248,7 @@ def main():
                 fd.writelines(new_lines)
 
     for repo_name in repos_to_update:
+        print(f"Check if {repo_name} needs a commit")
         repo_dir = CLONES / repo_name
         if subprocess.run(["git", "diff", "--quiet"], cwd=repo_dir).returncode:
             # Has unstaged changes, we need to stage them.
@@ -256,7 +257,22 @@ def main():
             # Has staged changes, we need to commit them.
             subprocess.run(["git", "commit", "-m", "AUTO: apply dependabot and GHA SHAs"], cwd=repo_dir, check=True)
 
-
+    # Temporary
+    for repo_name in repos_to_update:
+        repo_dir = CLONES / repo_name
+        last_commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_dir, universal_newlines=True).strip()
+        try:
+            with open(repo_dir / ".git" / "last-pushed-hash.txt", "r") as fd:
+                last_pushed_sha = fd.read().strip()
+        except OSError:
+            last_pushed_sha = ""
+        if last_pushed_sha == last_commit_sha:
+            print(f"Skip push for {repo_name}, latest already pushed")
+            continue
+        print(f"Push updates for {repo_name}")
+        subprocess.run(["git", "push", "origin", "auto/ci_pin_gha_sha"], cwd=repo_dir, check=True)
+        with open(repo_dir / ".git" / "last-pushed-hash.txt", "w") as fd:
+            fd.write(last_commit_sha)
 
 if __name__ == "__main__":
     main()
