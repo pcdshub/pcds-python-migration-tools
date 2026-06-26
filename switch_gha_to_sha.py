@@ -12,6 +12,8 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 import base64
 import json
+import re
+import subprocess
 import typing
 
 from ghapi.all import GhApi
@@ -28,9 +30,10 @@ COMMON_SHA = {
 
 # Stash intermediates to speed up debug of later steps
 HERE = Path(__file__).parent
-BUILD = HERE / "build"
+BUILD = HERE / "sha_build"
 REPO_LIST = BUILD / "repo_list.json"
 WORKFLOWS = BUILD / "workflow_contents.json"
+CLONES = BUILD / "clones"
 
 GhResponseElem = dict[str, str | int]
 GhListResponse = list[GhResponseElem]
@@ -149,6 +152,18 @@ def get_org_workflow_info(
     return org_workflow_info
 
 
+NON_SHA_PIN = re.compile(r"uses:.*@(.*)\n")
+
+
+def needs_pinning(gha_contents: str) -> bool:
+    """Return True if the file contents indicate that SHA pinning needs to be done."""
+    versions = NON_SHA_PIN.findall(gha_contents)
+    for ver in versions:
+        if len(ver.strip()) != 40:
+            return True
+    return False
+    
+
 def main():
     BUILD.mkdir(exist_ok=True)
     try:
@@ -161,6 +176,21 @@ def main():
             stash_github_response(REPO_LIST, repo_list)
         workflow_info = get_org_workflow_info(repo_list)
         stash_workflow_info(WORKFLOWS, workflow_info)
+
+    repos_to_update: list[str] = []
+
+    for repo_workflow_info in workflow_info.repos:
+        for file_content in repo_workflow_info.workflow_contents.values():
+            if needs_pinning(file_content):
+                repos_to_update.append(repo_workflow_info.name)
+
+    CLONES.mkdir(exist_ok=True)
+
+    for repo_name in repos_to_update:
+        if (CLONES / repo_name).exists():
+            continue
+        subprocess.run(["git", "clone", f"git@github.com:pcdshub/{repo_name}", "--depth",  "1", str(CLONES / repo_name)], check=True)
+        subprocess.run(["git", "checkout", "-b", "auto/ci_pin_gha_sha"], check=True, cwd=CLONES / repo_name)
 
 
 if __name__ == "__main__":
