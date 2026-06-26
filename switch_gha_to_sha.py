@@ -22,11 +22,21 @@ from ghapi.all import GhApi
 COMMON_SHA = {
     "pcdshub/pcds-ci-helpers/.*": "2e7e5ec8fb8afca5fa0cdb60b82b0f1b99cd2647",
     "actions/checkout": "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
+    "actions/configure-pages": "45bfe0192ca1faeb007ade9deae92b16b8254a0d",
+    "actions/create-release": "0cb9c9b65d5d1901c1f53e5e66eaf4afd303e70e",
+    "actions/deploy-pages": "cd2ce8fcbc39b97be8ca5fce6e763baed58fa128",
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
-    "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
-    "actions/setup-python": "a309ff8b426b58ec0e2a45f0f869d46889d02405",
     "actions/github-script": "3a2844b7e9c422d3c10d287c895573f7108da1b3",
+    "actions/setup-python": "a309ff8b426b58ec0e2a45f0f869d46889d02405",
+    "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
+    "actions/upload-pages-artifact": "fc324d3547104276b827a68afc52ff2a11cc49c9",
+    "actions/upload-release-asset": "e8f9f06c4b078e705bd2ea027f0926603fc9b4d5",
+    "docker/build-push-action": "f9f3042f7e2789586610d6e8b85c8f03e5195baf",
+    "docker/login-action": "650006c6eb7dba73a995cc03b0b2d7f5ca915bee",
+    "docker/setup-buildx-action": "d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5",
 }
+
+banned_repos = ["archiverappliance-datasource", "epicsmacrolib", "ioc-whatrecord-example", "pcds-ci-test-repo-python", "plc-summary"]
 
 # Stash intermediates to speed up debug of later steps
 HERE = Path(__file__).parent
@@ -72,6 +82,8 @@ def get_repo_list_from_github(
         for repo_info in page_repos:
             if repo_info["archived"] or repo_info["disabled"]:
                 continue
+            if repo_info["name"] in banned_repos:
+                continue
             repos.append(repo_info)
         if len(page_repos) < 100:
             break
@@ -113,6 +125,7 @@ def retrieve_workflow_info(
                 name=iter_repo["name"], workflow_contents=iter_repo["workflow_contents"]
             )
             for iter_repo in workflow_dict["repos"]
+            if iter_repo["name"] not in banned_repos
         ],
     )
 
@@ -183,7 +196,7 @@ def update_file(file_contents: list[str]) -> list[str]:
                     output_lines.append(line.replace(ver, sha))
                     print(f"replace '{line.strip()}' with '{output_lines[-1].strip()}'")
                     did_replace = True
-                    fixed_something = False
+                    fixed_something = True
                     break
         if not found_action:
             raise RuntimeError(f"Found unknown action: {act}")
