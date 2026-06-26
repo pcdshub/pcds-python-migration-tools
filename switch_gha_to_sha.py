@@ -20,7 +20,7 @@ from ghapi.all import GhApi
 
 # It's not so important that latest is picked, but pick a real SHA
 COMMON_SHA = {
-    "pcdshub/pcds-ci-helpers/*": "2e7e5ec8fb8afca5fa0cdb60b82b0f1b99cd2647",
+    "pcdshub/pcds-ci-helpers/.*": "2e7e5ec8fb8afca5fa0cdb60b82b0f1b99cd2647",
     "actions/checkout": "9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0",
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
@@ -152,17 +152,47 @@ def get_org_workflow_info(
     return org_workflow_info
 
 
-NON_SHA_PIN = re.compile(r"uses:.*@(.*)\n")
+USES_REGEX = re.compile(r"uses:(.*)@(.*)\n")
 
 
 def needs_pinning(gha_contents: str) -> bool:
     """Return True if the file contents indicate that SHA pinning needs to be done."""
-    versions = NON_SHA_PIN.findall(gha_contents)
-    for ver in versions:
+    act_and_ver = USES_REGEX.findall(gha_contents)
+    for _, ver in act_and_ver:
         if len(ver.strip()) != 40:
             return True
     return False
-    
+
+
+def update_file(file_contents: list[str]) -> list[str]:
+    """Given the old file contents, return what the file should contain after the update."""
+    output_lines = []
+    fixed_something = False
+    for line in file_contents:
+        did_replace = False
+        found_action = False
+        if (mch:=USES_REGEX.search(line)) is None:
+            continue
+        act, ver = mch.groups()
+        act = act.strip()
+        ver = ver.strip()
+        for action_name, sha in COMMON_SHA.items():
+            if re.match(action_name, act):
+                found_action = True
+                if ver != sha:
+                    output_lines.append(line.replace(ver, sha))
+                    print(f"replace '{line.strip()}' with '{output_lines[-1].strip()}'")
+                    did_replace = True
+                    fixed_something = False
+                    break
+        if not found_action:
+            raise RuntimeError(f"Found unknown action: {act}")
+        if not did_replace:
+            output_lines.append(line)
+    if not fixed_something:
+        raise RuntimeError("Did not find anything to fix!")
+    return output_lines
+
 
 def main():
     BUILD.mkdir(exist_ok=True)
@@ -191,6 +221,14 @@ def main():
             continue
         subprocess.run(["git", "clone", f"git@github.com:pcdshub/{repo_name}", "--depth",  "1", str(CLONES / repo_name)], check=True)
         subprocess.run(["git", "checkout", "-b", "auto/ci_pin_gha_sha"], check=True, cwd=CLONES / repo_name)
+
+    for repo_name in repos_to_update:
+        workflows_dir = CLONES / repo_name / ".github" / "workflows"
+        for workflow_file in workflows_dir.glob("*.y*ml"):
+            with open(workflow_file, "r") as fd:
+                lines = fd.readlines()
+            print(f"Updating {workflow_file}")
+            new_lines = update_file(lines)
 
 
 if __name__ == "__main__":
