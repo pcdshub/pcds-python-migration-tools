@@ -247,6 +247,15 @@ def main():
             with open(workflow_file, "w") as fd:
                 fd.writelines(new_lines)
 
+    for repo_name in repos_to_update:
+        repo_dir = CLONES / repo_name
+        if subprocess.run(["git", "diff", "--quiet"], cwd=repo_dir).returncode:
+            # Has unstaged changes, we need to stage them.
+            subprocess.run(["git", "add", ".github"], cwd=repo_dir, check=True)
+        if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo_dir).returncode:
+            # Has staged changes, we need to commit them.
+            subprocess.run(["git", "commit", "-m", "AUTO: apply dependabot and GHA SHAs"], cwd=repo_dir, check=True)
+
 
 
 if __name__ == "__main__":
