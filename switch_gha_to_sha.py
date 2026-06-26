@@ -15,6 +15,8 @@ import json
 import re
 import shutil
 import subprocess
+import textwrap
+import time
 import typing
 
 from ghapi.all import GhApi
@@ -208,15 +210,16 @@ def get_new_lines(file_contents: list[str]) -> list[str]:
 
 def main():
     BUILD.mkdir(exist_ok=True)
+    api = GhApi()
+    try:
+        repo_list = retrieve_github_response(REPO_LIST)
+    except OSError:
+        repo_list = get_repo_list_from_github(api=api)
+        stash_github_response(REPO_LIST, repo_list)
     try:
         workflow_info = retrieve_workflow_info(WORKFLOWS)
     except OSError:
-        try:
-            repo_list = retrieve_github_response(REPO_LIST)
-        except OSError:
-            repo_list = get_repo_list_from_github()
-            stash_github_response(REPO_LIST, repo_list)
-        workflow_info = get_org_workflow_info(repo_list)
+        workflow_info = get_org_workflow_info(repo_list, api=api)
         stash_workflow_info(WORKFLOWS, workflow_info)
 
     repos_to_update: list[str] = []
@@ -272,6 +275,59 @@ def main():
         subprocess.run(["git", "push", "origin", "auto/ci_pin_gha_sha"], cwd=repo_dir, check=True)
         with open(repo_dir / ".git" / "last-pushed-hash.txt", "w") as fd:
             fd.write(last_commit_sha)
+        time.sleep(2)
+
+    pr_title = "CI/AUTO: SHA Pinning and Dependabot"
+    pr_body = textwrap.dedent("""
+    # SHA Pinning
+
+    We are now required to pin GitHub Actions to specific SHAs.
+    This PR automatically updates all actions to a somewhat recent SHA.
+    It also configures dependabot to update the SHAs for us on a monthly basis.
+
+    If this PR is not merged, all GitHub Actions Workflows in this repository
+    will stop working at the end of June 2026.
+
+    See https://jira.slac.stanford.edu/browse/ECS-10557
+
+    ## Code Review
+
+    For reviewers: our task is to pick one of:
+
+    - Merge as-is, then fix the CI if needed
+    - Fix the CI, and then merge
+    - Close this PR and archive the repo
+    - Merge this PR and archive the repo
+    - Remove the GitHub Actions configuration from the repo,
+      then close this PR.
+    - Ignore this PR until we use the repo again
+    """)
+
+    repo_infos = {info["name"]: info for info in repo_list}
+    for repo_name in repos_to_update:
+        resp = api.pulls.list( # type: ignore
+            owner="pcdshub",
+            repo=repo_name,
+        )
+        already_made = False
+        for elem in resp:
+            if elem["title"] == pr_title:
+                already_made = True
+                break
+        if already_made:
+            print(f"Already created PR for {repo_name}")
+            continue
+        print(f"Creating PR for {repo_name}")
+        api.pulls.create( # type: ignore
+            owner="pcdshub",
+            repo=repo_name,
+            title=pr_title,
+            head="auto/ci_pin_gha_sha",
+            base=repo_infos[repo_name]["default_branch"],
+            body=pr_body,
+            maintainer_can_modify=True
+        )
+        time.sleep(2)
 
 if __name__ == "__main__":
     main()
