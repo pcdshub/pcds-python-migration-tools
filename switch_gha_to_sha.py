@@ -13,6 +13,7 @@ from pathlib import Path
 import base64
 import json
 import re
+import shutil
 import subprocess
 import typing
 
@@ -44,6 +45,7 @@ BUILD = HERE / "sha_build"
 REPO_LIST = BUILD / "repo_list.json"
 WORKFLOWS = BUILD / "workflow_contents.json"
 CLONES = BUILD / "clones"
+DEPENDABOT_TEMPLATE = HERE / "dependabot_template.yml"
 
 GhResponseElem = dict[str, str | int]
 GhListResponse = list[GhResponseElem]
@@ -177,33 +179,30 @@ def needs_pinning(gha_contents: str) -> bool:
     return False
 
 
-def update_file(file_contents: list[str]) -> list[str]:
+def get_new_lines(file_contents: list[str]) -> list[str]:
     """Given the old file contents, return what the file should contain after the update."""
     output_lines = []
     fixed_something = False
     for line in file_contents:
-        did_replace = False
-        found_action = False
+        output_lines.append(line)
         if (mch:=USES_REGEX.search(line)) is None:
             continue
         act, ver = mch.groups()
         act = act.strip()
         ver = ver.strip()
+        found_action = False
         for action_name, sha in COMMON_SHA.items():
             if re.match(action_name, act):
                 found_action = True
                 if ver != sha:
-                    output_lines.append(line.replace(ver, sha))
+                    output_lines[-1] = line.replace(ver, sha)
                     print(f"replace '{line.strip()}' with '{output_lines[-1].strip()}'")
-                    did_replace = True
                     fixed_something = True
                     break
         if not found_action:
             raise RuntimeError(f"Found unknown action: {act}")
-        if not did_replace:
-            output_lines.append(line)
     if not fixed_something:
-        raise RuntimeError("Did not find anything to fix!")
+        print("Did not find anything to fix!")
     return output_lines
 
 
@@ -236,12 +235,18 @@ def main():
         subprocess.run(["git", "checkout", "-b", "auto/ci_pin_gha_sha"], check=True, cwd=CLONES / repo_name)
 
     for repo_name in repos_to_update:
-        workflows_dir = CLONES / repo_name / ".github" / "workflows"
+        settings_dir = CLONES / repo_name / ".github"
+        shutil.copy(DEPENDABOT_TEMPLATE, settings_dir)
+
+        workflows_dir = settings_dir / "workflows"
         for workflow_file in workflows_dir.glob("*.y*ml"):
             with open(workflow_file, "r") as fd:
                 lines = fd.readlines()
             print(f"Updating {workflow_file}")
-            new_lines = update_file(lines)
+            new_lines = get_new_lines(lines)
+            with open(workflow_file, "w") as fd:
+                fd.writelines(new_lines)
+
 
 
 if __name__ == "__main__":
