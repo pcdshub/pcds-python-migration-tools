@@ -48,6 +48,7 @@ REPO_LIST = BUILD / "repo_list.json"
 WORKFLOWS = BUILD / "workflow_contents.json"
 CLONES = BUILD / "clones"
 DEPENDABOT_TEMPLATE = HERE / "dependabot_template.yml"
+TYPO_STATUS = BUILD / "typo_status.json"
 
 GhResponseElem = dict[str, str | int]
 GhListResponse = list[GhResponseElem]
@@ -209,6 +210,7 @@ def get_new_lines(file_contents: list[str]) -> list[str]:
 
 
 def main():
+    """Original main: worked great except wrong dependabot config filename"""
     BUILD.mkdir(exist_ok=True)
     api = GhApi()
     try:
@@ -239,6 +241,7 @@ def main():
 
     for repo_name in repos_to_update:
         settings_dir = CLONES / repo_name / ".github"
+        # This shutil was wrong, but I'm going to leave it as-is for now
         shutil.copy(DEPENDABOT_TEMPLATE, settings_dir)
 
         workflows_dir = settings_dir / "workflows"
@@ -329,5 +332,190 @@ def main():
         )
         time.sleep(2)
 
+@dataclass
+class DependabotStatus:
+    repo: str
+    has_typo_dependabot: bool
+
+
+def get_org_dependabot_status(
+    repo_list: GhListResponse, org: str = "pcdshub", api: GhApi | None = None
+) -> list[DependabotStatus]:
+    """Return information on dependabot in the org."""
+    status: list[DependabotStatus] = []
+    if api is None:
+        api = GhApi()
+    for repo_info in repo_list:
+        name = typing.cast(str, repo_info["name"])
+        try:
+            api.repos.get_content(  # type: ignore
+                org, name, ".github/dependabot_template.yml"
+            )
+            has_typo_dependabot = True
+        except Exception:
+            has_typo_dependabot = False
+        status.append(DependabotStatus(repo=name, has_typo_dependabot=has_typo_dependabot))
+    return status
+
+
+def stash_org_dependabot_status(filename: str | Path, status: list[DependabotStatus]):
+    """Store the fully processed information from github to limit the requests we need to make."""
+    print(f"Saving dependabot typo info to {filename}")
+    with open(filename, "w") as fd:
+        json.dump(list(asdict(st) for st in status), fd)
+
+
+def retrieve_org_dependabot_status(
+    filename: str | Path,
+) -> list[DependabotStatus]:
+    """Bring back the dependabot status from a previous run."""
+    with open(filename, "r") as fd:
+        print(f"Retrieving dependabot typo info from {filename}")
+        dependabot_list = json.load(fd)
+
+    return [DependabotStatus(**info) for info in dependabot_list]
+
+
+def fix_dependabot_name():
+    """When running main, the wrong dependabot filename was used. This renames it."""
+    # Start with the same as the original main: find valid repos
+    BUILD.mkdir(exist_ok=True)
+    api = GhApi()
+    try:
+        repo_list = retrieve_github_response(REPO_LIST)
+    except OSError:
+        repo_list = get_repo_list_from_github(api=api)
+        stash_github_response(REPO_LIST, repo_list)
+    # We don't care about workflows, instead we want to identify two kinds of repos:
+    # 1. Already merged PR with .github/dependabot_template.yml instead of .github/dependabot.yml
+    # 2. PR from previous step not merged yet (will use branch to identify)
+    try:
+        dependabot_status = retrieve_org_dependabot_status(TYPO_STATUS)
+    except OSError:
+        dependabot_status = get_org_dependabot_status(repo_list, api=api)
+        stash_org_dependabot_status(TYPO_STATUS, dependabot_status)
+
+    repos_to_make_new_pr: list[str] = [st.repo for st in dependabot_status if st.has_typo_dependabot]
+    repos_pr_still_open: list[str]
+
+    try:
+        with open(BUILD / "repo_pr_open.json", "r") as fd:
+            repos_pr_still_open = json.load(fd)
+            print("Loaded repos with open PRs from cache")
+    except OSError:
+        repos_pr_still_open = []
+        # To get the unmerged ones, see who still has the open PR
+        print("Checking github for already open PRs")
+        repo_names: list[str] = [info["name"] for info in repo_list] # type: ignore
+        old_pr_title = "CI/AUTO: SHA Pinning and Dependabot"
+        for repo_name in repo_names:
+            resp = api.pulls.list( # type: ignore
+                owner="pcdshub",
+                repo=repo_name,
+                state="open"
+            )
+            already_made = False
+            for elem in resp:
+                if elem["title"] == old_pr_title:
+                    repos_pr_still_open.append(repo_name)
+                    already_made = True
+                    break
+            time.sleep(0.1)
+        print("Storing already open PR repo names in cache")
+        with open(BUILD / "repo_pr_open.json", "w") as fd:
+            json.dump(repos_pr_still_open, fd)
+
+    CLONES.mkdir(exist_ok=True)
+
+    print(f"Need to make new PRs on {len(repos_to_make_new_pr)} repos including {repos_to_make_new_pr[:3]}")
+    print(f"Will update existing PRs on {len(repos_pr_still_open)} repos including {repos_pr_still_open[:3]}")
+
+    for repo_name in repos_to_make_new_pr:
+        if (CLONES / repo_name).exists():
+            continue
+        subprocess.run(["git", "clone", f"git@github.com:pcdshub/{repo_name}", "--depth",  "1", str(CLONES / repo_name)], check=True)
+        subprocess.run(["git", "checkout", "-b", "auto/fix_dependabot_file"], check=True, cwd=CLONES / repo_name)
+        time.sleep(0.1)
+
+    for repo_name in repos_pr_still_open:
+        if (CLONES / repo_name).exists():
+            continue
+        subprocess.run(["git", "clone", f"git@github.com:pcdshub/{repo_name}", "--depth",  "1", "-b", "auto/ci_pin_gha_sha", str(CLONES / repo_name)], check=True)
+        time.sleep(0.1)
+
+    for repo_name in repos_to_make_new_pr + repos_pr_still_open:
+        typo_name = CLONES / repo_name / ".github" / "dependabot_template.yml"
+        if not typo_name.exists():
+            continue
+        typo_name.rename(CLONES / repo_name / ".github" / "dependabot.yml")
+
+    for repo_name in repos_to_make_new_pr + repos_pr_still_open:
+        print(f"Check if {repo_name} needs a commit")
+        repo_dir = CLONES / repo_name
+        if subprocess.run(["git", "diff", "--quiet"], cwd=repo_dir).returncode:
+            # Has unstaged changes, we need to stage them.
+            subprocess.run(["git", "add", ".github"], cwd=repo_dir, check=True)
+        if subprocess.run(["git", "diff", "--cached", "--quiet"], cwd=repo_dir).returncode:
+            # Has staged changes, we need to commit them.
+            subprocess.run(["git", "commit", "-m", "AUTO: fix name of dependabot config file"], cwd=repo_dir, check=True)
+
+    for repo_name in repos_to_make_new_pr + repos_pr_still_open:
+        repo_dir = CLONES / repo_name
+        last_commit_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=repo_dir, universal_newlines=True).strip()
+        try:
+            with open(repo_dir / ".git" / "last-pushed-hash.txt", "r") as fd:
+                last_pushed_sha = fd.read().strip()
+        except OSError:
+            last_pushed_sha = ""
+        if last_pushed_sha == last_commit_sha:
+            print(f"Skip push for {repo_name}, latest already pushed")
+            continue
+        print(f"Push updates for {repo_name}")
+        if repo_name in repos_to_make_new_pr:
+            branch = "auto/fix_dependabot_file"
+        else:
+            branch = "auto/ci_pin_gha_sha"
+        subprocess.run(["git", "push", "origin", branch], cwd=repo_dir, check=True)
+        with open(repo_dir / ".git" / "last-pushed-hash.txt", "w") as fd:
+            fd.write(last_commit_sha)
+        time.sleep(2)
+
+    pr_title = "CI/AUTO: Fix dependabot config filename"
+    pr_body = textwrap.dedent("""
+    # SHA Pinning
+
+    This is an automated follow-up to a previous PR,
+    where I had erroneously used the wrong name for the dependabot config file.
+
+    This should be merged whether or not the CI runs correctly.
+    """)
+
+    repo_infos = {info["name"]: info for info in repo_list}
+    for repo_name in repos_to_make_new_pr:
+        resp = api.pulls.list( # type: ignore
+            owner="pcdshub",
+            repo=repo_name,
+        )
+        already_made = False
+        for elem in resp:
+            if elem["title"] == pr_title:
+                already_made = True
+                break
+        if already_made:
+            print(f"Already created PR for {repo_name}")
+            continue
+        print(f"Creating PR for {repo_name}")
+        api.pulls.create( # type: ignore
+            owner="pcdshub",
+            repo=repo_name,
+            title=pr_title,
+            head="auto/fix_dependabot_file",
+            base=repo_infos[repo_name]["default_branch"],
+            body=pr_body,
+            maintainer_can_modify=True
+        )
+        time.sleep(2)
+
 if __name__ == "__main__":
-    main()
+    # main()
+    fix_dependabot_name()
